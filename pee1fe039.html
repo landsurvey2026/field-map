@@ -89,7 +89,7 @@ function fbLoad(){
           DLINES=data.filter(function(d){return d&&d.pts;});
           if(DLINES.length){
             document.getElementById('dxfBtn').style.display='';
-            document.getElementById('statsBtn').style.display='';
+            (function(){var b=document.getElementById('statsBtn');if(b)b.style.display='';})();
             if(DALL.length===0){
               var sla=0,sln=0,cnt=0;
               DLINES.forEach(function(l){
@@ -1811,8 +1811,8 @@ fetch('https://landsurvey2027-default-rtdb.firebaseio.com/projects/'+PROJ_ID+'/d
     if(!data||!data.length)return;
     DLINES=data.filter(function(d){return d&&d.pts;});
     if(!DLINES.length)return;
-    document.getElementById('dxfBtn').style.display='';
-    document.getElementById('statsBtn').style.display='';
+    var _dxfBtn=document.getElementById('dxfBtn'); if(_dxfBtn)_dxfBtn.style.display='';
+    var _statsBtn=document.getElementById('statsBtn'); if(_statsBtn)_statsBtn.style.display='';
     // DALL 없으면 DXF 중심으로 이동
     if(DALL.length===0){
       var sla=0,sln=0,cnt=0;
