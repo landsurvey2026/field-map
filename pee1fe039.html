@@ -566,7 +566,7 @@ function _loadKakaoSDK(cb){
   if(_kakaoFailed){cb(null);return;}
   if(_kakaoReady&&_kakaoGeocoder){cb(_kakaoGeocoder);return;}
   var sc=document.createElement('script');
-  sc.src='//dapi.kakao.com/v2/maps/sdk.js?appkey=eb879946d11d6627f85d1ef988dd0de8&libraries=services&autoload=false';
+  sc.src='//dapi.kakao.com/v2/maps/sdk.js?appkey=814dca815cb12a51c6e6f748e0b7a9f0&libraries=services&autoload=false';
   sc.onload=function(){
     try{
       kakao.maps.load(function(){
@@ -620,18 +620,23 @@ function showAddrAt(la,ln,sx,sy){
     clearTimeout(_timer);
     if(!geocoder){_nominatimAddr(la,ln,'addrText');return;}
     geocoder.coord2Address(ln,la,function(result,status){
+      console.log('[카카오 주소응답]',status,result);
       var addr='';
-      if(status===kakao.maps.services.Status.OK&&result.length>0){
-        var road=result[0].road_address;
+      if(status===kakao.maps.services.Status.OK&&result&&result.length>0){
         var jibun=result[0].address;
-        // 지번주소 우선, 없으면 도로명
+        var road=result[0].road_address;
+        // 지번주소 무조건 우선
         if(jibun&&jibun.address_name){
           addr=jibun.address_name;
         }else if(road&&road.address_name){
           addr=road.address_name;
         }
+        document.getElementById('addrText').textContent=addr||'주소를 찾을 수 없어요';
+      }else{
+        // 카카오 실패 → Nominatim
+        console.log('[카카오 실패, Nominatim 사용]');
+        _nominatimAddr(la,ln,'addrText');
       }
-      document.getElementById('addrText').textContent=addr||'주소를 찾을 수 없어요';
     });
   });
 }
