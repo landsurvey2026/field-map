@@ -57,8 +57,8 @@ function fbLoad(){
         db=firebase.database();
 
         console.log('Firebase 연결됨');
-        document.getElementById('fbDot').textContent='🟢';
-        document.getElementById('fbDot').title='Firebase 실시간 연결됨';
+        var _fbDot=document.getElementById('fbDot');
+        if(_fbDot){_fbDot.textContent='🟢';_fbDot.title='Firebase 실시간 연결됨';}
         // ★ 라인 상태 실시간 리스너
         db.ref('projects/'+PROJ_ID+'/lineStatus').on('value',function(snap){
           lineStatus=snap.val()||{};
