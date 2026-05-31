@@ -566,7 +566,7 @@ function _loadKakaoSDK(cb){
   if(_kakaoFailed){cb(null);return;}
   if(_kakaoReady&&_kakaoGeocoder){cb(_kakaoGeocoder);return;}
   var sc=document.createElement('script');
-  sc.src='//dapi.kakao.com/v2/maps/sdk.js?appkey=814dca815cb12a51c6e6f748e0b7a9f0&libraries=services&autoload=false';
+  sc.src='//dapi.kakao.com/v2/maps/sdk.js?appkey=eb879946d11d6627f85d1ef988dd0de8&libraries=services&autoload=false';
   sc.onload=function(){
     try{
       kakao.maps.load(function(){
