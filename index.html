@@ -1014,18 +1014,49 @@ function loadKakao(cb){
 
 function reverseGeocode(lat, lng){
   loadKakao(geocoder=>{
-    if(!geocoder){ showAddrPopup(lat, lng, '주소 서비스 연결 실패'); return; }
-    geocoder.coord2Address(lng, lat, (result, status)=>{
-      let addr = '주소를 찾을 수 없습니다';
-      if(status === kakao.maps.services.Status.OK && result.length>0){
-        const jibun = result[0].address;
-        const road = result[0].road_address;
-        if(jibun && jibun.address_name) addr = jibun.address_name;
-        else if(road && road.address_name) addr = road.address_name;
-      }
-      showAddrPopup(lat, lng, addr);
-    });
+    if(!geocoder){ vworldGeocode(lat, lng); return; }
+    try{
+      geocoder.coord2Address(lng, lat, (result, status)=>{
+        if(status === kakao.maps.services.Status.OK && result && result.length>0){
+          const jibun = result[0].address;
+          const road = result[0].road_address;
+          let addr = jibun && jibun.address_name ? jibun.address_name
+                   : (road && road.address_name ? road.address_name : null);
+          if(addr){ showAddrPopup(lat, lng, addr); return; }
+        }
+        // 카카오 결과 없음 → VWorld
+        vworldGeocode(lat, lng);
+      });
+    }catch(e){ vworldGeocode(lat, lng); }
   });
+}
+
+// VWorld 역지오코딩 (JSONP - CORS 우회)
+function vworldGeocode(lat, lng){
+  const cbName = 'vwcb_' + Date.now();
+  const timer = setTimeout(()=>{
+    delete window[cbName];
+    showAddrPopup(lat, lng, '주소를 찾을 수 없습니다');
+  }, 5000);
+  window[cbName] = function(data){
+    clearTimeout(timer);
+    delete window[cbName];
+    let addr = '주소를 찾을 수 없습니다';
+    try{
+      if(data.response && data.response.status==='OK' && data.response.result){
+        const results = data.response.result;
+        const parcel = results.find(r=>r.type==='parcel');
+        const road = results.find(r=>r.type==='road');
+        addr = (parcel||road||results[0]).text;
+      }
+    }catch(e){}
+    showAddrPopup(lat, lng, addr);
+  };
+  const sc = document.createElement('script');
+  sc.src = `https://api.vworld.kr/req/address?service=address&request=getAddress&version=2.0&crs=epsg:4326&point=${lng},${lat}&format=json&type=both&key=${VW_KEY}&callback=${cbName}`;
+  sc.onerror = ()=>{ clearTimeout(timer); delete window[cbName]; showAddrPopup(lat, lng, '주소 조회 실패'); };
+  document.head.appendChild(sc);
+  setTimeout(()=>{ if(sc.parentNode) sc.parentNode.removeChild(sc); }, 6000);
 }
 
 function showAddrPopup(lat, lng, addr){
@@ -1782,23 +1813,57 @@ function bestParseRows(rows){
   }
   if(urlPts.length) return urlPts;
 
-  // ④ 위도/경도 직접 컬럼
-  const li = hdr.findIndex(h=>h.includes('위도')||h.includes('lat'));
-  const gi = hdr.findIndex(h=>h.includes('경도')||h.includes('lng')||h.includes('lon'));
-  if(li>=0 && gi>=0){
-    const llPts = [];
+  // ④ 위경도 헤더로 찾기
+  let li = hdr.findIndex(h=>h.includes('위도')||h==='lat'||h==='latitude'||h==='y');
+  let gi = hdr.findIndex(h=>h.includes('경도')||h==='lng'||h==='lon'||h==='longitude'||h==='x');
+
+  function tryLatLng(latCol, lngCol){
+    const pts = [];
     for(let i=1; i<rows.length; i++){
       const row = rows[i];
       try{
-        const la=parseFloat(row[li]), ln=parseFloat(row[gi]);
-        if(la>30 && la<40 && ln>124 && ln<132){
-          const nm = (ni>=0 && row[ni]) ? String(row[ni]).trim() : ('P'+i);
-          llPts.push([nm, la, ln, null, null]);
+        const la=parseFloat(String(row[latCol]).replace(/,/g,''));
+        const ln=parseFloat(String(row[lngCol]).replace(/,/g,''));
+        // 한국 위경도 범위
+        if(la>33 && la<39 && ln>124 && ln<132){
+          const nm = (ni>=0 && row[ni]) ? String(row[ni]).trim() : ('P'+String(i).padStart(4,'0'));
+          pts.push([nm, la, ln, null, null]);
         }
       }catch(e){}
     }
-    return llPts;
+    return pts;
   }
+
+  // 헤더로 찾았으면 사용
+  if(li>=0 && gi>=0){
+    const p = tryLatLng(li, gi);
+    if(p.length > 0) return p;
+  }
+
+  // ⑤ 헤더 없어도 - 숫자 범위로 위경도 자동 감지
+  // 위도(33~39)와 경도(124~132) 패턴을 가진 두 열 찾기
+  const maxC = Math.min((rows[0]||[]).length, 15);
+  let bestLL = [];
+  for(let ci=0; ci<maxC; ci++){
+    for(let cj=0; cj<maxC; cj++){
+      if(ci===cj) continue;
+      // ci=위도열, cj=경도열로 가정
+      let validCount = 0;
+      for(let i=1; i<Math.min(rows.length, 10); i++){
+        const la=parseFloat(String(rows[i][ci]).replace(/,/g,''));
+        const ln=parseFloat(String(rows[i][cj]).replace(/,/g,''));
+        if(la>33 && la<39 && ln>124 && ln<132) validCount++;
+      }
+      // 샘플 중 절반 이상 유효하면 이 조합 채택
+      if(validCount >= 3){
+        const p = tryLatLng(ci, cj);
+        if(p.length > bestLL.length) bestLL = p;
+      }
+    }
+    if(bestLL.length > 10) break;
+  }
+  if(bestLL.length > 0) return bestLL;
+
   return [];
 }
 
@@ -1829,6 +1894,8 @@ async function handleXLS(file){
       log.textContent='❌ 좌표를 찾지 못했습니다 (X,Y 또는 위경도 확인)';
       return;
     }
+    // 좌표 형식 판별 (xn 있으면 TM, 없으면 위경도)
+    const fmtType = bestPts[0][3] != null ? 'TM좌표(X,Y)' : '위경도';
 
     // points 객체로 변환
     const points = {};
@@ -1857,7 +1924,7 @@ async function handleXLS(file){
       addInfo = ` (추가점 ${add}, 갱신 ${dup})`;
     }
     await db.ref('projects/'+PROJ_ID+'/points').set(final);
-    log.textContent = `✅ ${bestPts.length}개 좌표 ${append?'추가':'업로드'} 완료${addInfo}`;
+    log.textContent = `✅ ${fmtType} ${bestPts.length}개 ${append?'추가':'업로드'} 완료${addInfo}`;
     toast('엑셀 업로드 완료');
   }catch(ex){ log.textContent = '❌ 오류: '+ex.message; }
 }
