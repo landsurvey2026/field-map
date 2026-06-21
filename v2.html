@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>현장관리시스템</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- ExcelJS (엑셀 읽기) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+<style>
+:root{
+  --navy:#0c1e4a; --navy2:#0f2952; --sky:#38bdf8; --sky-d:#0ea5e9;
+  --ink:#1e293b; --mut:#64748b; --line:#e2e8f0; --bg:#f1f5f9;
+  --ok:#16a34a; --warn:#f59e0b; --bad:#dc2626;
+  --w1:#3b82f6; --w2:#f97316; --w3:#a855f7;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--ink)}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+/* ── 상단 바 ── */
+#topbar{height:54px;background:var(--navy);display:flex;align-items:center;
+  padding:0 12px;gap:10px;color:#fff;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+#topbar .logo{font-size:18px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:7px}
+#topbar .logo .dot{width:9px;height:9px;border-radius:50%;background:var(--sky)}
+#projName{font-size:13px;color:var(--sky);font-weight:600;margin-left:4px;
+  max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#topbar .spacer{flex:1}
+.tbtn{background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;
+  padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px}
+.tbtn:hover{background:rgba(255,255,255,.18)}
+.tbtn.admin{background:var(--sky);color:var(--navy)}
+
+/* ── 지도 ── */
+#map{flex:1;width:100%;background:#aadaff;z-index:1}
+
+/* ── 통계 칩 ── */
+#statChips{position:absolute;top:62px;left:10px;z-index:500;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 80px)}
+.chip{background:#fff;border-radius:20px;padding:5px 11px;font-size:12px;font-weight:700;
+  box-shadow:0 2px 8px rgba(0,0,0,.12);display:flex;align-items:center;gap:5px}
+.chip .cdot{width:8px;height:8px;border-radius:50%}
+
+/* ── 우측 도구 ── */
+#tools{position:absolute;top:62px;right:10px;z-index:500;display:flex;flex-direction:column;gap:6px}
+.tool{width:42px;height:42px;background:#fff;border:none;border-radius:10px;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;font-size:18px;
+  display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.tool:active{transform:scale(.95)}
+.tool.on{background:var(--sky);color:#fff}
+
+/* ── 범례 ── */
+#legend{position:absolute;bottom:14px;left:10px;z-index:500;background:rgba(15,30,60,.92);
+  color:#fff;border-radius:12px;padding:10px 12px;font-size:12px;backdrop-filter:blur(4px)}
+#legend .lrow{display:flex;align-items:center;gap:7px;margin:3px 0}
+#legend .lc{width:11px;height:11px;border-radius:50%}
+
+/* ── 크레딧 ── */
+#credit{position:absolute;bottom:14px;right:10px;z-index:500;
+  background:rgba(15,30,60,.7);color:#94a3b8;font-size:10px;
+  padding:4px 9px;border-radius:6px;font-style:italic}
+
+/* ── 하단 시트(목록) ── */
+#sheet{position:absolute;left:0;right:0;bottom:0;z-index:800;background:#fff;
+  border-radius:18px 18px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.18);
+  transform:translateY(calc(100% - 44px));transition:transform .3s;max-height:70vh;display:flex;flex-direction:column}
+#sheet.open{transform:translateY(0)}
+#sheetHandle{height:44px;display:flex;align-items:center;justify-content:center;
+  gap:8px;cursor:pointer;font-weight:700;color:var(--navy);font-size:14px;border-bottom:1px solid var(--line)}
+#sheetHandle .grab{width:36px;height:4px;background:var(--line);border-radius:2px;position:absolute;top:7px;left:50%;transform:translateX(-50%)}
+#sheetBody{overflow-y:auto;padding:8px 0}
+.litem{padding:11px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px;cursor:pointer}
+.litem:active{background:#f8fafc}
+.litem .ltag{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.litem .lname{font-weight:600;font-size:14px}
+.litem .lsub{font-size:11px;color:var(--mut);margin-top:1px}
+.litem .lstat{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700}
+
+/* ── 오버레이/모달 공통 ── */
+.ovl{position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.5);
+  display:none;align-items:center;justify-content:center;padding:20px}
+.ovl.show{display:flex}
+.modal{background:#fff;border-radius:16px;max-width:480px;width:100%;
+  max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal .mhead{padding:18px 20px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between}
+.modal .mhead h3{font-size:17px;font-weight:800;color:var(--navy)}
+.modal .mclose{border:none;background:none;font-size:24px;color:var(--mut);cursor:pointer}
+.modal .mbody{padding:20px}
+
+/* ── 관리자 게이트(PIN) ── */
+#gate{position:fixed;inset:0;z-index:3000;background:var(--navy);
+  display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:20px}
+#gate.show{display:flex}
+#gate .glogo{font-size:24px;font-weight:800;margin-bottom:6px}
+#gate .gsub{font-size:13px;color:var(--sky);margin-bottom:30px}
+#gatePin{font-size:28px;letter-spacing:12px;text-align:center;width:200px;
+  background:transparent;border:none;border-bottom:2px solid var(--sky);color:#fff;padding:10px 0;outline:none}
+#gatePin::placeholder{letter-spacing:8px;font-size:18px;color:#475569}
+#gateErr{color:#fca5a5;font-size:13px;margin-top:12px;height:18px}
+.gbtn{margin-top:24px;background:var(--sky);color:var(--navy);border:none;
+  border-radius:10px;padding:12px 40px;font-size:15px;font-weight:700;cursor:pointer}
+
+/* ── 폼 요소 ── */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;font-weight:700;color:var(--mut);margin-bottom:5px}
+.field input,.field select{width:100%;padding:10px 12px;border:1px solid var(--line);
+  border-radius:8px;font-size:14px;outline:none}
+.field input:focus,.field select:focus{border-color:var(--sky)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 18px;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer}
+.btn-pri{background:var(--sky);color:#fff}
+.btn-pri:hover{background:var(--sky-d)}
+.btn-sec{background:var(--bg);color:var(--ink)}
+.btn-full{width:100%}
+.btn-row{display:flex;gap:8px;margin-top:8px}
+
+/* ── 관리자 패널 ── */
+.adm-sec{margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.adm-sec:last-child{border-bottom:none}
+.adm-sec h4{font-size:14px;font-weight:800;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.adm-log{font-size:12px;color:var(--mut);margin-top:8px;min-height:16px}
+.file-drop{border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;
+  color:var(--mut);font-size:13px;cursor:pointer;transition:.2s}
+.file-drop:hover{border-color:var(--sky);color:var(--sky)}
+
+/* ── 토스트 ── */
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
+  z-index:4000;background:var(--navy);color:#fff;padding:11px 20px;border-radius:24px;
+  font-size:13px;font-weight:600;opacity:0;transition:.3s;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── 스플래시 ── */
+#splash{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0c1e4a,#0a3060);
+  display:flex;align-items:center;justify-content:center;
+  animation:splashHide .5s ease 2s forwards}
+@keyframes splashHide{99%{opacity:0;visibility:visible}100%{opacity:0;visibility:hidden;pointer-events:none}}
+#splash .scard{text-align:center;color:#fff}
+#splash .stitle{font-size:30px;font-weight:900}
+#splash .stitle .b{color:var(--sky)}
+#splash .sline{width:120px;height:2px;background:var(--sky);margin:14px auto}
+#splash .ssub{font-size:12px;color:#7dd3fc;font-style:italic}
+#splash .sbar{width:200px;height:4px;background:rgba(56,189,248,.2);border-radius:2px;overflow:hidden;margin:18px auto 0}
+#splash .sbar i{display:block;height:100%;background:var(--sky);width:0;animation:sbar 2s linear forwards}
+@keyframes sbar{to{width:100%}}
+
+/* Leaflet 라벨 */
+.line-label{background:transparent;border:none;box-shadow:none;
+  color:var(--w1);font-weight:800;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
+.pt-label{background:#fff;border:1px solid var(--line);border-radius:4px;
+  padding:1px 4px;font-size:10px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+
+@media(min-width:768px){
+  #sheet{max-width:420px;left:auto;right:14px;bottom:14px;border-radius:16px;
+    transform:translateY(calc(100% - 44px))}
+  #sheet.open{transform:translateY(0)}
+}
+</style>
+</head>
+<body>
+
+<!-- 스플래시 -->
+<div id="splash">
+  <div class="scard">
+    <div class="stitle">현장관리<span class="b">시스템</span></div>
+    <div class="sline"></div>
+    <div class="ssub">Dev. Seo Young Min</div>
+    <div class="sbar"><i></i></div>
+  </div>
+</div>
+
+<div id="app">
+  <!-- 상단 -->
+  <div id="topbar">
+    <div class="logo"><span class="dot"></span>현장관리<span id="projName"></span></div>
+    <div class="spacer"></div>
+    <button class="tbtn" id="searchBtn">🔍 검색</button>
+    <button class="tbtn admin" id="adminBtn">⚙ 관리</button>
+  </div>
+
+  <!-- 지도 -->
+  <div id="map"></div>
+
+  <!-- 통계 칩 -->
+  <div id="statChips"></div>
+
+  <!-- 우측 도구 -->
+  <div id="tools">
+    <button class="tool" id="layerBtn" title="지도 전환">🗺️</button>
+    <button class="tool" id="gpsBtn" title="내 위치">📍</button>
+    <button class="tool" id="fitBtn" title="전체 보기">⬜</button>
+  </div>
+
+  <!-- 범례 -->
+  <div id="legend">
+    <div class="lrow"><span class="lc" style="background:#dc2626"></span>미할당</div>
+    <div class="lrow"><span class="lc" style="background:var(--w1)"></span>담당자1</div>
+    <div class="lrow"><span class="lc" style="background:var(--w2)"></span>담당자2</div>
+    <div class="lrow"><span class="lc" style="background:var(--w3)"></span>담당자3</div>
+    <div class="lrow"><span class="lc" style="background:#16a34a"></span>완료</div>
+  </div>
+
+  <div id="credit">Dev. Seo Young Min</div>
+
+  <!-- 하단 시트 -->
+  <div id="sheet">
+    <div id="sheetHandle"><span class="grab"></span><span id="sheetTitle">목록</span></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<!-- 검색 모달 -->
+<div class="ovl" id="searchOvl">
+  <div class="modal">
+    <div class="mhead"><h3>검색</h3><button class="mclose" data-close>×</button></div>
+    <div class="mbody">
+      <div class="field"><input id="searchInput" placeholder="포인트명, 레이어, 주소 검색..."></div>
+      <div id="searchList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 관리자 게이트 -->
+<div id="gate">
+  <div class="glogo">🔒 관리자 인증</div>
+  <div class="gsub">현장관리시스템</div>
+  <input id="gatePin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN">
+  <div id="gateErr"></div>
+  <button class="gbtn" id="gateGo">확인</button>
+</div>
+
+<!-- 관리자 패널 -->
+<div class="ovl" id="adminOvl">
+  <div class="modal">
+    <div class="mhead"><h3>⚙ 관리자</h3><button class="mclose" data-close>×</button></div>
+    <div class="mbody">
+
+      <div class="adm-sec">
+        <h4>📋 사업 선택</h4>
+        <div class="field">
+          <select id="admProjSel"></select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-sec" id="admNewProj">+ 새 사업</button>
+          <button class="btn btn-sec" id="admDelProj">사업 삭제</button>
+        </div>
+      </div>
+
+      <div class="adm-sec">
+        <h4>📐 DXF 업로드 (라인)</h4>
+        <div class="file-drop" id="dxfDrop">DXF 파일을 선택하거나 끌어다 놓으세요</div>
+        <input type="file" id="dxfFile" accept=".dxf" hidden>
+        <div class="btn-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mut)">
+            <input type="checkbox" id="dxfAppend"> 기존 라인에 추가
+          </label>
+        </div>
+        <div class="adm-log" id="dxfLog"></div>
+      </div>
+
+      <div class="adm-sec">
+        <h4>📊 엑셀 업로드 (포인트)</h4>
+        <div class="file-drop" id="xlsDrop">엑셀 파일을 선택하거나 끌어다 놓으세요</div>
+        <input type="file" id="xlsFile" accept=".xlsx,.xls" hidden>
+        <div class="btn-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mut)">
+            <input type="checkbox" id="xlsAppend"> 기존 포인트에 추가
+          </label>
+        </div>
+        <div class="adm-log" id="xlsLog"></div>
+      </div>
+
+      <div class="adm-sec">
+        <h4>👷 담당자 이름</h4>
+        <div class="field"><input id="wn1" placeholder="담당자1"></div>
+        <div class="field"><input id="wn2" placeholder="담당자2"></div>
+        <div class="field"><input id="wn3" placeholder="담당자3"></div>
+        <button class="btn btn-pri btn-full" id="wnSave">담당자 이름 저장</button>
+      </div>
+
+      <div class="adm-sec">
+        <h4>🔗 현장 공유</h4>
+        <div class="field"><input id="shareUrl" readonly></div>
+        <button class="btn btn-pri btn-full" id="shareCopy">링크 복사</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- 새 사업 모달 -->
+<div class="ovl" id="newProjOvl">
+  <div class="modal" style="max-width:380px">
+    <div class="mhead"><h3>새 사업 등록</h3><button class="mclose" data-close>×</button></div>
+    <div class="mbody">
+      <div class="field"><label>사업명</label><input id="npName" placeholder="예: 2026년 김포시(상수)"></div>
+      <button class="btn btn-pri btn-full" id="npCreate">사업 만들기</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  설정
+// ═══════════════════════════════════════════════════
+const VW_KEY = 'C4DA8041-6991-371D-9C2B-F8C2BCC78E5E';
+const FB_CONFIG = {
+  apiKey: "AIzaSyDCZils_rrPT3A5c163FM4Ij8ZXQBvPuqE",
+  databaseURL: "https://landsurvey2027-default-rtdb.firebaseio.com",
+  projectId: "landsurvey2027"
+};
+const ADMIN_PIN = "0000";
+const WORKER_COLORS = {1:'#3b82f6', 2:'#f97316', 3:'#a855f7'};
+
+// URL 파라미터로 사업 ID 받기 (?p=xxx)
+const urlParams = new URLSearchParams(location.search);
+let PROJ_ID = urlParams.get('p') || localStorage.getItem('lastProj') || '';
+
+// ═══════════════════════════════════════════════════
+//  상태
+// ═══════════════════════════════════════════════════
+let map, baseLayer, satLayer, curBase='base';
+let db;
+let POINTS = {};      // {name: {la,ln,xn,ye}}
+let LINES = [];       // [{tp,layer,pts,color}]
+let STATUS = {};      // {name: {done,worker}}
+let LINESTATUS = {};  // {line_0:{done,worker}}
+let WORKER_NAMES = {1:'담당자1',2:'담당자2',3:'담당자3'};
+let PROJECTS = {};    // {pid: {name}}
+let ptMarkers = {}, lineLayers = [];
+let gpsMarker=null, gpsCircle=null, gpsWatch=null;
+
+// ═══════════════════════════════════════════════════
+//  지도 초기화
+// ═══════════════════════════════════════════════════
+function initMap(){
+  map = L.map('map', {zoomControl:false, attributionControl:false}).setView([37.5,127], 11);
+
+  baseLayer = L.tileLayer(
+    `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Base/{z}/{y}/{x}.png`,
+    {maxNativeZoom:19, maxZoom:21, subdomains:''});
+  satLayer = L.tileLayer(
+    `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Satellite/{z}/{y}/{x}.jpeg`,
+    {maxNativeZoom:19, maxZoom:21});
+  const hybrid = L.tileLayer(
+    `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Hybrid/{z}/{y}/{x}.png`,
+    {maxNativeZoom:19, maxZoom:21});
+
+  baseLayer.addTo(map);
+  window._hybrid = hybrid;
+
+  L.control.zoom({position:'topright'}).addTo(map);
+  // 줌 컨트롤을 도구 아래로
+  setTimeout(()=>{
+    const zc=document.querySelector('.leaflet-control-zoom');
+    if(zc){zc.style.marginTop='200px';zc.style.marginRight='10px';}
+  },100);
+
+  map.on('click', onMapClick);
+}
+
+function toggleLayer(){
+  if(curBase==='base'){
+    map.removeLayer(baseLayer); satLayer.addTo(map); window._hybrid.addTo(map);
+    curBase='sat'; document.getElementById('layerBtn').textContent='🛰️';
+  }else{
+    map.removeLayer(satLayer); map.removeLayer(window._hybrid); baseLayer.addTo(map);
+    curBase='base'; document.getElementById('layerBtn').textContent='🗺️';
+  }
+}
+
+function onMapClick(e){
+  // 1단계에서는 주소조회만 (추후 확장)
+  reverseGeocode(e.latlng.lat, e.latlng.lng);
+}
+
+// ═══════════════════════════════════════════════════
+//  데이터 렌더링
+// ═══════════════════════════════════════════════════
+function statusColor(name){
+  const st = STATUS[name];
+  if(st && st.done) return '#16a34a';
+  if(st && st.worker) return WORKER_COLORS[st.worker] || '#dc2626';
+  return '#dc2626';
+}
+
+function renderPoints(){
+  // 기존 제거
+  Object.values(ptMarkers).forEach(m=>map.removeLayer(m));
+  ptMarkers = {};
+
+  Object.keys(POINTS).forEach(name=>{
+    const p = POINTS[name];
+    if(!p.la || !p.ln) return;
+    const col = statusColor(name);
+    const mk = L.circleMarker([p.la, p.ln], {
+      radius:6, fillColor:col, color:'#fff', weight:2, fillOpacity:1
+    }).addTo(map);
+    mk.bindTooltip(name, {className:'pt-label', direction:'top', offset:[0,-8]});
+    mk.on('click', ()=>{ onPointClick(name); L.DomEvent.stopPropagation(); });
+    ptMarkers[name] = mk;
+  });
+}
+
+function renderLines(){
+  lineLayers.forEach(l=>map.removeLayer(l));
+  lineLayers = [];
+
+  LINES.forEach((ln, idx)=>{
+    if(ln.tp==='text' || !ln.pts || ln.pts.length<2) return;
+    const st = LINESTATUS['line_'+idx];
+    const done = st && st.done;
+    const col = done ? '#16a34a' : (ln.color || '#3b82f6');
+    const poly = L.polyline(ln.pts, {
+      color: col, weight: done?4:3, opacity:.9
+    }).addTo(map);
+    poly.on('click', ()=>{ onLineClick(idx); L.DomEvent.stopPropagation(); });
+    lineLayers.push(poly);
+  });
+}
+
+function renderStats(){
+  const chips = document.getElementById('statChips');
+  let counts = {un:0, w1:0, w2:0, w3:0, done:0};
+  Object.keys(POINTS).forEach(name=>{
+    const st = STATUS[name];
+    if(st && st.done) counts.done++;
+    else if(st && st.worker==1) counts.w1++;
+    else if(st && st.worker==2) counts.w2++;
+    else if(st && st.worker==3) counts.w3++;
+    else counts.un++;
+  });
+  const total = Object.keys(POINTS).length;
+  const pct = total ? Math.round(counts.done/total*100) : 0;
+  chips.innerHTML = `
+    <div class="chip"><span class="cdot" style="background:#1e293b"></span>전체 ${total}</div>
+    <div class="chip"><span class="cdot" style="background:#dc2626"></span>${counts.un}</div>
+    <div class="chip"><span class="cdot" style="background:#3b82f6"></span>${counts.w1}</div>
+    <div class="chip"><span class="cdot" style="background:#f97316"></span>${counts.w2}</div>
+    <div class="chip"><span class="cdot" style="background:#a855f7"></span>${counts.w3}</div>
+    <div class="chip" style="background:#16a34a;color:#fff"><span class="cdot" style="background:#fff"></span>완료 ${counts.done} (${pct}%)</div>
+  `;
+}
+
+function renderSheet(){
+  const body = document.getElementById('sheetBody');
+  const title = document.getElementById('sheetTitle');
+  const names = Object.keys(POINTS).sort();
+  const lineCount = LINES.filter(l=>l.tp!=='text').length;
+  title.textContent = `포인트 ${names.length} · 라인 ${lineCount}`;
+
+  let html = '';
+  names.forEach(name=>{
+    const p = POINTS[name];
+    const col = statusColor(name);
+    const st = STATUS[name];
+    let statTxt='', statBg='';
+    if(st && st.done){statTxt='완료';statBg='#dcfce7;color:#16a34a';}
+    else if(st && st.worker){statTxt=WORKER_NAMES[st.worker]||('담당'+st.worker);statBg='#dbeafe;color:#1d4ed8';}
+    else {statTxt='미할당';statBg='#fee2e2;color:#dc2626';}
+    html += `<div class="litem" onclick="goToPoint('${name}')">
+      <span class="ltag" style="background:${col}"></span>
+      <div><div class="lname">${name}</div>
+      <div class="lsub">${p.la?.toFixed(6)}, ${p.ln?.toFixed(6)}</div></div>
+      <span class="lstat" style="background:${statBg}">${statTxt}</span>
+    </div>`;
+  });
+  body.innerHTML = html || '<div style="padding:30px;text-align:center;color:#94a3b8">포인트가 없습니다</div>';
+}
+
+function renderAll(){
+  renderPoints(); renderLines(); renderStats(); renderSheet();
+}
+
+window.goToPoint = function(name){
+  const p = POINTS[name];
+  if(p && p.la){ map.setView([p.la, p.ln], 18); document.getElementById('sheet').classList.remove('open'); }
+}
+
+function workerBtns(curWorker, onPick){
+  let html = '<div style="display:flex;gap:5px;margin:8px 0">';
+  for(let w=1; w<=3; w++){
+    const on = curWorker==w;
+    html += `<button class="wbtn" data-w="${w}" style="flex:1;padding:8px 4px;border:2px solid ${WORKER_COLORS[w]};
+      background:${on?WORKER_COLORS[w]:'#fff'};color:${on?'#fff':WORKER_COLORS[w]};
+      border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">${WORKER_NAMES[w]}</button>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function onPointClick(name){
+  const p = POINTS[name];
+  const st = STATUS[name] || {};
+  const done = st.done;
+  const worker = st.worker || 0;
+
+  const html = `<div style="min-width:200px">
+    <div style="font-weight:800;font-size:15px;color:#0c1e4a;margin-bottom:3px">📍 ${name}</div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:8px">${p.la.toFixed(6)}, ${p.ln.toFixed(6)}</div>
+    <div style="font-size:11px;color:#64748b;font-weight:700">담당자 배정</div>
+    ${workerBtns(worker)}
+    <button class="doneBtn" style="width:100%;padding:9px;border:none;border-radius:8px;
+      background:${done?'#f1f5f9':'#16a34a'};color:${done?'#666':'#fff'};font-size:13px;font-weight:700;cursor:pointer">
+      ${done?'↩ 완료 취소':'✓ 완료 처리'}</button>
+  </div>`;
+
+  const popup = L.popup({maxWidth:280}).setLatLng([p.la, p.ln]).setContent(html).openOn(map);
+
+  setTimeout(()=>{
+    document.querySelectorAll('.wbtn').forEach(b=>{
+      b.onclick = ()=>{
+        const w = parseInt(b.dataset.w);
+        const newW = (worker==w) ? 0 : w;  // 같은거 누르면 해제
+        setPointStatus(name, {worker:newW, done:false});
+        map.closePopup();
+      };
+    });
+    const db2 = document.querySelector('.doneBtn');
+    if(db2) db2.onclick = ()=>{
+      setPointStatus(name, {done:!done, doneAt:!done?Date.now():null});
+      map.closePopup();
+    };
+  }, 50);
+}
+
+function onLineClick(idx){
+  const ln = LINES[idx];
+  const mid = ln.pts[Math.floor(ln.pts.length/2)];
+  const st = LINESTATUS['line_'+idx] || {};
+  const done = st.done;
+  const len = lineLength(ln.pts);
+
+  const html = `<div style="min-width:200px">
+    <div style="font-weight:800;font-size:14px;color:#0c1e4a">📐 ${ln.layer||'라인'} #${idx+1}</div>
+    <div style="font-size:13px;color:#3b82f6;font-weight:700;margin:3px 0 8px">연장: ${len.toFixed(1)}m</div>
+    <button class="lineDoneBtn" style="width:100%;padding:9px;border:none;border-radius:8px;margin-bottom:5px;
+      background:${done?'#f1f5f9':'#16a34a'};color:${done?'#666':'#fff'};font-size:13px;font-weight:700;cursor:pointer">
+      ${done?'↩ 완료 취소':'✓ 완료 처리'}</button>
+    <button class="lineGoBtn" style="width:100%;padding:8px;border:none;border-radius:8px;
+      background:#eff6ff;color:#3b82f6;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:5px">📍 이 라인으로 이동</button>
+    <button class="lineDelBtn" style="width:100%;padding:8px;border:1px solid #fca5a5;border-radius:8px;
+      background:#fff0f0;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer">🗑 이 라인 삭제</button>
+  </div>`;
+
+  L.popup({maxWidth:280}).setLatLng(mid).setContent(html).openOn(map);
+
+  setTimeout(()=>{
+    const d = document.querySelector('.lineDoneBtn');
+    if(d) d.onclick = ()=>{ setLineStatus(idx, !done); map.closePopup(); };
+    const g = document.querySelector('.lineGoBtn');
+    if(g) g.onclick = ()=>{ map.fitBounds(ln.pts, {padding:[60,60]}); map.closePopup(); };
+    const del = document.querySelector('.lineDelBtn');
+    if(del) del.onclick = ()=>{ deleteLine(idx); map.closePopup(); };
+  }, 50);
+}
+
+// 라인 길이 계산 (Haversine)
+function lineLength(pts){
+  let total = 0;
+  for(let i=1; i<pts.length; i++){
+    total += haversine(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
+  }
+  return total;
+}
+function haversine(la1,ln1,la2,ln2){
+  const R=6371000, rad=Math.PI/180;
+  const dLa=(la2-la1)*rad, dLn=(ln2-ln1)*rad;
+  const a=Math.sin(dLa/2)**2 + Math.cos(la1*rad)*Math.cos(la2*rad)*Math.sin(dLn/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+// 상태 저장
+function setPointStatus(name, data){
+  db.ref('projects/'+PROJ_ID+'/status/'+name).update(data);
+  toast(data.done!==undefined ? (data.done?'완료 처리됨':'완료 취소됨') : '담당자 배정됨');
+}
+function setLineStatus(idx, done){
+  db.ref('projects/'+PROJ_ID+'/lineStatus/line_'+idx).update({done, doneAt:done?Date.now():null});
+  toast(done?'라인 완료 처리됨':'완료 취소됨');
+}
+function deleteLine(idx){
+  if(!confirm(`라인 #${idx+1}을 삭제할까요?`)) return;
+  const newLines = LINES.slice();
+  newLines.splice(idx, 1);
+  // 라인상태 재정렬
+  const newStatus = {};
+  Object.keys(LINESTATUS).forEach(k=>{
+    const n = parseInt(k.replace('line_',''));
+    if(n < idx) newStatus[k] = LINESTATUS[k];
+    else if(n > idx) newStatus['line_'+(n-1)] = LINESTATUS[k];
+  });
+  Promise.all([
+    db.ref('projects/'+PROJ_ID+'/dxfLines').set(newLines),
+    db.ref('projects/'+PROJ_ID+'/lineStatus').set(newStatus)
+  ]).then(()=>toast('라인이 삭제되었습니다'));
+}
+
+// ═══════════════════════════════════════════════════
+//  Firebase 연동
+// ═══════════════════════════════════════════════════
+function initFirebase(){
+  if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+  db = firebase.database();
+  console.log('Firebase 연결됨');
+  loadProjects();
+}
+
+function loadProjects(){
+  db.ref('projects').once('value').then(snap=>{
+    const all = snap.val() || {};
+    PROJECTS = {};
+    Object.keys(all).forEach(pid=>{
+      PROJECTS[pid] = {name: (all[pid].info && all[pid].info.name) || pid};
+    });
+    // 사업 선택 채우기
+    fillProjectSelect();
+    // 현재 사업 없으면 첫번째
+    if(!PROJ_ID || !PROJECTS[PROJ_ID]){
+      PROJ_ID = Object.keys(PROJECTS)[0] || '';
+    }
+    if(PROJ_ID) loadProject(PROJ_ID);
+  });
+}
+
+function loadProject(pid){
+  PROJ_ID = pid;
+  localStorage.setItem('lastProj', pid);
+  document.getElementById('projName').textContent = PROJECTS[pid]?.name || '';
+  updateShareUrl();
+
+  const ref = db.ref('projects/'+pid);
+
+  // 포인트
+  ref.child('points').on('value', s=>{ POINTS = s.val()||{}; renderAll(); });
+  // 라인
+  ref.child('dxfLines').on('value', s=>{
+    const v = s.val();
+    LINES = Array.isArray(v) ? v.filter(Boolean) : (v?Object.values(v):[]);
+    renderAll();
+  });
+  // 포인트 상태
+  ref.child('status').on('value', s=>{ STATUS = s.val()||{}; renderAll(); });
+  // 라인 상태
+  ref.child('lineStatus').on('value', s=>{ LINESTATUS = s.val()||{}; renderLines(); });
+  // 담당자 이름
+  ref.child('workerNames').on('value', s=>{
+    const v = s.val();
+    if(v){
+      WORKER_NAMES = Array.isArray(v)
+        ? {1:v[1]||'담당자1',2:v[2]||'담당자2',3:v[3]||'담당자3'}
+        : {1:v['1']||'담당자1',2:v['2']||'담당자2',3:v['3']||'담당자3'};
+      document.getElementById('wn1').value = WORKER_NAMES[1];
+      document.getElementById('wn2').value = WORKER_NAMES[2];
+      document.getElementById('wn3').value = WORKER_NAMES[3];
+      updateLegend();
+    }
+  });
+
+  // 첫 로드 시 전체보기
+  setTimeout(fitAll, 800);
+}
+
+function fitAll(){
+  const bounds = [];
+  Object.values(POINTS).forEach(p=>{ if(p.la) bounds.push([p.la,p.ln]); });
+  LINES.forEach(l=>{ if(l.pts) l.pts.forEach(pt=>bounds.push(pt)); });
+  if(bounds.length) map.fitBounds(bounds, {padding:[50,50], maxZoom:18});
+}
+
+function updateShareUrl(){
+  const url = location.origin + location.pathname + '?p=' + PROJ_ID;
+  const el = document.getElementById('shareUrl');
+  if(el) el.value = url;
+}
+
+// ═══════════════════════════════════════════════════
+//  주소 조회 (VWorld 역지오코딩)
+// ═══════════════════════════════════════════════════
+function reverseGeocode(lat, lng){
+  const url = `https://api.vworld.kr/req/address?service=address&request=getAddress&version=2.0&crs=epsg:4326&point=${lng},${lat}&format=json&type=both&key=${VW_KEY}`;
+  // JSONP 방식이 필요할 수 있으나 우선 fetch 시도
+  fetch(url).then(r=>r.json()).then(d=>{
+    let addr = '주소를 찾을 수 없습니다';
+    if(d.response && d.response.status==='OK' && d.response.result){
+      const results = d.response.result;
+      // 지번(parcel) 우선
+      const parcel = results.find(r=>r.type==='parcel');
+      const road = results.find(r=>r.type==='road');
+      addr = (parcel||road||results[0]).text;
+    }
+    L.popup().setLatLng([lat,lng])
+      .setContent(`<b>${addr}</b><br><span style="color:#64748b;font-size:11px">${lat.toFixed(6)}, ${lng.toFixed(6)}</span>`)
+      .openOn(map);
+  }).catch(e=>{
+    L.popup().setLatLng([lat,lng])
+      .setContent(`<span style="color:#64748b">${lat.toFixed(6)}, ${lng.toFixed(6)}</span><br><small style="color:#dc2626">주소 조회 실패</small>`)
+      .openOn(map);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  GPS
+// ═══════════════════════════════════════════════════
+function toggleGPS(){
+  const btn = document.getElementById('gpsBtn');
+  if(gpsWatch){
+    navigator.geolocation.clearWatch(gpsWatch); gpsWatch=null;
+    if(gpsMarker) map.removeLayer(gpsMarker);
+    if(gpsCircle) map.removeLayer(gpsCircle);
+    gpsMarker=gpsCircle=null;
+    btn.classList.remove('on');
+    return;
+  }
+  if(!navigator.geolocation){ toast('GPS를 지원하지 않습니다'); return; }
+  btn.classList.add('on'); btn.textContent='⌛';
+  let first=true;
+  gpsWatch = navigator.geolocation.watchPosition(pos=>{
+    const {latitude:la, longitude:ln, accuracy:acc} = pos.coords;
+    btn.textContent = acc<20?'📍':acc<50?'🔵':acc<100?'🟡':'🔴';
+    if(!gpsMarker){
+      gpsMarker = L.circleMarker([la,ln],{radius:8,fillColor:'#3b82f6',color:'#fff',weight:3,fillOpacity:1}).addTo(map);
+      gpsCircle = L.circle([la,ln],{radius:acc,color:'#3b82f6',fillColor:'#3b82f6',fillOpacity:.1,weight:1}).addTo(map);
+    }else{
+      gpsMarker.setLatLng([la,ln]);
+      gpsCircle.setLatLng([la,ln]).setRadius(acc);
+    }
+    if(first){ map.setView([la,ln],17); first=false; }
+  }, err=>{
+    toast('위치 권한을 허용해주세요');
+    btn.classList.remove('on'); btn.textContent='📍';
+  }, {enableHighAccuracy:true, maximumAge:3000, timeout:15000});
+}
+
+// ═══════════════════════════════════════════════════
+//  토스트
+// ═══════════════════════════════════════════════════
+function updateLegend(){
+  const lg = document.getElementById('legend');
+  lg.innerHTML = `
+    <div class="lrow"><span class="lc" style="background:#dc2626"></span>미할당</div>
+    <div class="lrow"><span class="lc" style="background:#3b82f6"></span>${WORKER_NAMES[1]}</div>
+    <div class="lrow"><span class="lc" style="background:#f97316"></span>${WORKER_NAMES[2]}</div>
+    <div class="lrow"><span class="lc" style="background:#a855f7"></span>${WORKER_NAMES[3]}</div>
+    <div class="lrow"><span class="lc" style="background:#16a34a"></span>완료</div>`;
+}
+
+let toastT;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════
+//  이벤트 바인딩
+// ═══════════════════════════════════════════════════
+function bindEvents(){
+  // 도구
+  document.getElementById('layerBtn').onclick = toggleLayer;
+  document.getElementById('gpsBtn').onclick = toggleGPS;
+  document.getElementById('fitBtn').onclick = fitAll;
+
+  // 시트 토글
+  document.getElementById('sheetHandle').onclick = ()=>{
+    document.getElementById('sheet').classList.toggle('open');
+  };
+
+  // 검색
+  document.getElementById('searchBtn').onclick = ()=>openOvl('searchOvl');
+  document.getElementById('searchInput').oninput = doSearch;
+
+  // 관리자
+  document.getElementById('adminBtn').onclick = ()=>{
+    document.getElementById('gate').classList.add('show');
+    document.getElementById('gatePin').value='';
+    document.getElementById('gatePin').focus();
+  };
+  document.getElementById('gateGo').onclick = tryGate;
+  document.getElementById('gatePin').onkeydown = e=>{ if(e.key==='Enter') tryGate(); };
+
+  // 모달 닫기
+  document.querySelectorAll('[data-close]').forEach(b=>{
+    b.onclick = ()=>b.closest('.ovl').classList.remove('show');
+  });
+  document.querySelectorAll('.ovl').forEach(o=>{
+    o.onclick = e=>{ if(e.target===o) o.classList.remove('show'); };
+  });
+
+  // 관리자 기능
+  document.getElementById('admProjSel').onchange = e=>loadProject(e.target.value);
+  document.getElementById('admNewProj').onclick = ()=>openOvl('newProjOvl');
+  document.getElementById('npCreate').onclick = createProject;
+  document.getElementById('admDelProj').onclick = deleteProject;
+  document.getElementById('wnSave').onclick = saveWorkerNames;
+  document.getElementById('shareCopy').onclick = copyShare;
+
+  // DXF 업로드
+  const dxfDrop = document.getElementById('dxfDrop');
+  const dxfFile = document.getElementById('dxfFile');
+  dxfDrop.onclick = ()=>dxfFile.click();
+  dxfFile.onchange = e=>{ if(e.target.files[0]) handleDXF(e.target.files[0]); };
+  setupDrop(dxfDrop, handleDXF);
+
+  // 엑셀 업로드
+  const xlsDrop = document.getElementById('xlsDrop');
+  const xlsFile = document.getElementById('xlsFile');
+  xlsDrop.onclick = ()=>xlsFile.click();
+  xlsFile.onchange = e=>{ if(e.target.files[0]) handleXLS(e.target.files[0]); };
+  setupDrop(xlsDrop, handleXLS);
+}
+
+function setupDrop(el, handler){
+  el.ondragover = e=>{ e.preventDefault(); el.style.borderColor='var(--sky)'; };
+  el.ondragleave = ()=>{ el.style.borderColor=''; };
+  el.ondrop = e=>{
+    e.preventDefault(); el.style.borderColor='';
+    if(e.dataTransfer.files[0]) handler(e.dataTransfer.files[0]);
+  };
+}
+
+function openOvl(id){ document.getElementById(id).classList.add('show'); }
+
+function tryGate(){
+  const pin = document.getElementById('gatePin').value;
+  if(pin === ADMIN_PIN){
+    document.getElementById('gate').classList.remove('show');
+    document.getElementById('gateErr').textContent='';
+    openOvl('adminOvl');
+  }else{
+    document.getElementById('gateErr').textContent='PIN이 올바르지 않습니다';
+    document.getElementById('gatePin').value='';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  검색
+// ═══════════════════════════════════════════════════
+function doSearch(e){
+  const q = e.target.value.trim().toLowerCase();
+  const list = document.getElementById('searchList');
+  if(!q){ list.innerHTML=''; return; }
+  let html='';
+  Object.keys(POINTS).filter(n=>n.toLowerCase().includes(q)).slice(0,20).forEach(name=>{
+    html += `<div class="litem" onclick="goToPoint('${name}');document.getElementById('searchOvl').classList.remove('show')">
+      <span class="ltag" style="background:${statusColor(name)}"></span>
+      <div class="lname">${name}</div></div>`;
+  });
+  // 레이어 검색
+  const layers = [...new Set(LINES.map(l=>l.layer).filter(Boolean))];
+  layers.filter(l=>l.toLowerCase().includes(q)).slice(0,10).forEach(layer=>{
+    html += `<div class="litem"><span class="ltag" style="background:#3b82f6"></span>
+      <div><div class="lname">${layer}</div><div class="lsub">레이어</div></div></div>`;
+  });
+  list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#94a3b8">결과 없음</div>';
+}
+
+// ═══════════════════════════════════════════════════
+//  관리자: 사업 관리
+// ═══════════════════════════════════════════════════
+function fillProjectSelect(){
+  const sel = document.getElementById('admProjSel');
+  if(!sel) return;
+  sel.innerHTML = Object.keys(PROJECTS).map(pid=>
+    `<option value="${pid}" ${pid===PROJ_ID?'selected':''}>${PROJECTS[pid].name}</option>`
+  ).join('');
+}
+
+function createProject(){
+  const name = document.getElementById('npName').value.trim();
+  if(!name){ toast('사업명을 입력하세요'); return; }
+  const pid = 'p' + Date.now().toString(36);
+  db.ref('projects/'+pid+'/info').set({name}).then(()=>{
+    PROJECTS[pid] = {name};
+    fillProjectSelect();
+    document.getElementById('newProjOvl').classList.remove('show');
+    document.getElementById('npName').value='';
+    loadProject(pid);
+    toast('사업이 생성되었습니다');
+  });
+}
+
+function deleteProject(){
+  if(!PROJ_ID) return;
+  if(!confirm(`"${PROJECTS[PROJ_ID].name}" 사업을 삭제할까요?\n모든 데이터가 사라집니다.`)) return;
+  db.ref('projects/'+PROJ_ID).remove().then(()=>{
+    delete PROJECTS[PROJ_ID];
+    toast('삭제되었습니다');
+    location.reload();
+  });
+}
+
+function saveWorkerNames(){
+  const names = {
+    1: document.getElementById('wn1').value.trim() || '담당자1',
+    2: document.getElementById('wn2').value.trim() || '담당자2',
+    3: document.getElementById('wn3').value.trim() || '담당자3'
+  };
+  db.ref('projects/'+PROJ_ID+'/workerNames').set(names).then(()=>toast('담당자 이름 저장됨'));
+}
+
+function copyShare(){
+  const url = document.getElementById('shareUrl').value;
+  navigator.clipboard.writeText(url).then(()=>toast('링크가 복사되었습니다'));
+}
+
+// ═══════════════════════════════════════════════════
+//  DXF 파싱 (브라우저)
+// ═══════════════════════════════════════════════════
+const ACI = {1:'#FF0000',2:'#FFFF00',3:'#00FF00',4:'#00FFFF',5:'#0000FF',
+  6:'#FF00FF',7:'#000000',8:'#808080',9:'#C0C0C0',
+  10:'#FF0000',30:'#FF7F00',40:'#FFFF00',50:'#7FFF00',60:'#00FF00',
+  90:'#007FFF',100:'#0000FF',110:'#7F00FF',250:'#808080',252:'#C0C0C0'};
+function aci2hex(n){ n=Math.abs(parseInt(n)||7); return ACI[n]||'#3b82f6'; }
+
+// TM(중부원점) → WGS84
+function tmToWgs(N, E){
+  const a=6378137.0, f=1/298.257222101, e2=2*f-f*f;
+  const lam0=127*Math.PI/180, phi0=38*Math.PI/180, FN=600000, FE=200000;
+  function ma(p){
+    const e4=e2*e2, e6=e4*e2;
+    return a*((1-e2/4-3*e4/64-5*e6/256)*p-(3*e2/8+3*e4/32+45*e6/1024)*Math.sin(2*p)
+      +(15*e4/256+45*e6/1024)*Math.sin(4*p)-(35*e6/3072)*Math.sin(6*p));
+  }
+  const e4=e2*e2, e6=e4*e2;
+  const M=ma(phi0)+(N-FN);
+  const mu=M/(a*(1-e2/4-3*e4/64-5*e6/256));
+  const e1=(1-Math.sqrt(1-e2))/(1+Math.sqrt(1-e2));
+  const p1=mu+(3*e1/2-27*e1**3/32)*Math.sin(2*mu)+(21*e1**2/16-55*e1**4/32)*Math.sin(4*mu)
+    +151*e1**3/96*Math.sin(6*mu)+1097*e1**4/512*Math.sin(8*mu);
+  const s1=Math.sin(p1), c1=Math.cos(p1), t1=Math.tan(p1);
+  const N1=a/Math.sqrt(1-e2*s1*s1), T1=t1*t1, C1=e2/(1-e2)*c1*c1;
+  const R1=a*(1-e2)/Math.pow(1-e2*s1*s1,1.5), D=(E-FE)/N1;
+  const lat=p1-(N1*t1/R1)*(D*D/2-D**4/24*(5+3*T1+10*C1-4*C1*C1-9*e2/(1-e2))
+    +D**6/720*(61+90*T1+298*C1+45*T1*T1-252*e2/(1-e2)-3*C1*C1));
+  const lon=lam0+(D-D**3/6*(1+2*T1+C1)+D**5/120*(5-2*C1+28*T1-3*C1*C1+8*e2/(1-e2)+24*T1*T1))/c1;
+  return [lat*180/Math.PI, lon*180/Math.PI];
+}
+
+function parseDXF(text){
+  const raw = text.split(/\r?\n/);
+  const layerColors = {};
+  const entities = [];
+  let i = 0;
+
+  while(i < raw.length){
+    const gc = parseInt(raw[i]);
+    if(isNaN(gc)){ i++; continue; }
+    const val = (raw[i+1]||'').trim();
+    i += 2;
+    if(gc === 0){
+      const etype = val.toUpperCase();
+      const pairs = [];
+      while(i < raw.length){
+        const gc2 = parseInt(raw[i]);
+        if(isNaN(gc2)){ i++; continue; }
+        const v2 = (raw[i+1]||'').trim();
+        i += 2;
+        if(gc2 === 0){ i -= 2; break; }
+        pairs.push([gc2, v2]);
+      }
+      const pdict = {};
+      pairs.forEach(([g,v])=>{ if(!(g in pdict)) pdict[g]=v; });
+
+      if(etype === 'LAYER'){
+        const lname = pdict[2]||'';
+        const ltc = pdict[420];
+        if(lname){
+          if(ltc){ const tc=parseInt(ltc); layerColors[lname]=rgbHex(tc); }
+          else layerColors[lname]=aci2hex(pdict[62]||7);
+        }
+      } else if(['LWPOLYLINE','LINE','POLYLINE'].includes(etype)){
+        let color=null;
+        if(pairs.some(p=>p[0]===420)) color=rgbHex(parseInt(pdict[420]));
+        else if(pairs.some(p=>p[0]===62)){ const ci=parseInt(pdict[62]); if(ci!==0&&ci!==256) color=aci2hex(ci); }
+        entities.push({type:etype, layer:pdict[8]||'0', pairs, color});
+      }
+    }
+  }
+
+  const result = [];
+  entities.forEach(ent=>{
+    const pdict = {}; ent.pairs.forEach(([g,v])=>{ if(!(g in pdict)) pdict[g]=v; });
+    const color = ent.color || layerColors[ent.layer];
+    let rawPts = [];
+    if(ent.type==='LWPOLYLINE' || ent.type==='POLYLINE'){
+      const xs = ent.pairs.filter(p=>p[0]===10).map(p=>parseFloat(p[1]));
+      const ys = ent.pairs.filter(p=>p[0]===20).map(p=>parseFloat(p[1]));
+      rawPts = xs.map((x,k)=>[x, ys[k]]);
+    } else if(ent.type==='LINE'){
+      rawPts = [[parseFloat(pdict[10]||0), parseFloat(pdict[20]||0)],
+                [parseFloat(pdict[11]||0), parseFloat(pdict[21]||0)]];
+    }
+    if(rawPts.length < 2) return;
+    // 좌표축 판별
+    const eCol = (Math.abs(rawPts[0][0]) > Math.abs(rawPts[0][1])) ? 'x' : 'y';
+    const wgs = [];
+    rawPts.forEach(([px,py])=>{
+      const N = (eCol==='x') ? py : px;
+      const E = (eCol==='x') ? px : py;
+      const [la, ln] = tmToWgs(N, E);
+      if(la>30 && la<40 && ln>124 && ln<132) wgs.push([+la.toFixed(6), +ln.toFixed(6)]);
+    });
+    if(wgs.length >= 2){
+      const row = {tp:'line', layer:ent.layer, pts:wgs};
+      if(color) row.color = color;
+      result.push(row);
+    }
+  });
+  return result;
+}
+function rgbHex(tc){ return '#'+[(tc>>16)&255,(tc>>8)&255,tc&255].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase(); }
+
+function handleDXF(file){
+  const log = document.getElementById('dxfLog');
+  log.textContent = '⏳ DXF 파싱 중...';
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const lines = parseDXF(e.target.result);
+      if(!lines.length){ log.textContent='❌ 추출된 라인이 없습니다'; return; }
+      const append = document.getElementById('dxfAppend').checked;
+      let merged = lines;
+      if(append){
+        const existing = LINES.slice();
+        merged = existing.concat(lines);
+      }
+      db.ref('projects/'+PROJ_ID+'/dxfLines').set(merged).then(()=>{
+        log.textContent = `✅ ${lines.length}개 라인 ${append?'추가':'업로드'} 완료 (총 ${merged.length}개)`;
+        toast('DXF 업로드 완료');
+      });
+    }catch(ex){ log.textContent='❌ 오류: '+ex.message; }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+// ═══════════════════════════════════════════════════
+//  엑셀 파싱 (ExcelJS)
+// ═══════════════════════════════════════════════════
+async function handleXLS(file){
+  const log = document.getElementById('xlsLog');
+  log.textContent = '⏳ 엑셀 읽는 중...';
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const ws = wb.worksheets[0];
+    const points = {};
+    let count = 0;
+    // 헤더 찾기: 번호/명, 위도, 경도 (또는 X,Y)
+    let headerRow = 1;
+    ws.eachRow((row, rn)=>{
+      const vals = row.values.map(v=> (v==null?'':String(v).trim()));
+      // 위도/경도 헤더 감지
+      if(vals.some(v=>v.includes('위도')||v.toLowerCase()==='lat') &&
+         vals.some(v=>v.includes('경도')||v.toLowerCase()==='lng')){
+        headerRow = rn;
+      }
+    });
+    // 컬럼 인덱스 파악
+    const hdr = ws.getRow(headerRow).values.map(v=>(v==null?'':String(v).trim()));
+    const findCol = (...keys)=> hdr.findIndex(h=>keys.some(k=>h.includes(k)));
+    const cName = findCol('번호','명','이름','name','No');
+    const cLat = findCol('위도','lat','la');
+    const cLng = findCol('경도','lng','ln','경도');
+    const cX = findCol('X','x','xn','X(N)');
+    const cY = findCol('Y','y','ye','Y(E)');
+
+    ws.eachRow((row, rn)=>{
+      if(rn <= headerRow) return;
+      const vals = row.values;
+      const name = cName>=0 ? String(vals[cName]||'').trim() : ('P'+rn);
+      const la = cLat>=0 ? parseFloat(vals[cLat]) : null;
+      const ln = cLng>=0 ? parseFloat(vals[cLng]) : null;
+      if(!name || !la || !ln || isNaN(la) || isNaN(ln)) return;
+      points[name] = {la, ln};
+      if(cX>=0 && vals[cX]) points[name].xn = parseFloat(vals[cX]);
+      if(cY>=0 && vals[cY]) points[name].ye = parseFloat(vals[cY]);
+      count++;
+    });
+
+    if(!count){ log.textContent='❌ 포인트를 찾지 못했습니다 (위도/경도 컬럼 확인)'; return; }
+
+    const append = document.getElementById('xlsAppend').checked;
+    let final = points;
+    if(append){
+      final = Object.assign({}, POINTS, points);
+    }
+    await db.ref('projects/'+PROJ_ID+'/points').set(final);
+    log.textContent = `✅ ${count}개 포인트 ${append?'추가':'업로드'} 완료`;
+    toast('엑셀 업로드 완료');
+  }catch(ex){ log.textContent = '❌ 오류: '+ex.message; }
+}
+
+// ═══════════════════════════════════════════════════
+//  시작
+// ═══════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', ()=>{
+  initMap();
+  bindEvents();
+  initFirebase();
+});
+</script>
+</body>
+</html>
