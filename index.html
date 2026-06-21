@@ -26,17 +26,30 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 #app{position:fixed;inset:0;display:flex;flex-direction:column}
 
 /* ── 상단 바 ── */
-#topbar{height:54px;background:var(--navy);display:flex;align-items:center;
-  padding:0 12px;gap:10px;color:#fff;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-#topbar .logo{font-size:18px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:7px}
-#topbar .logo .dot{width:9px;height:9px;border-radius:50%;background:var(--sky)}
-#projName{font-size:13px;color:var(--sky);font-weight:600;margin-left:4px;
-  max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#topbar .spacer{flex:1}
+#topbar{height:52px;background:var(--navy);display:flex;align-items:center;
+  padding:0 8px;gap:6px;color:#fff;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+#topbar .logo{font-size:16px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+#topbar .logo .dot{width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0}
+#topbar .logo-txt{white-space:nowrap}
+#projName{font-size:12px;color:var(--sky);font-weight:600;
+  max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1}
+#topbar .spacer{flex:1;min-width:0}
 .tbtn{background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;
-  padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px}
-.tbtn:hover{background:rgba(255,255,255,.18)}
+  font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  gap:5px;flex-shrink:0;padding:7px 12px}
+.tbtn.icon{width:38px;height:38px;padding:0;font-size:17px}
+.tbtn:active{background:rgba(255,255,255,.25)}
 .tbtn.admin{background:var(--sky);color:var(--navy)}
+@media(max-width:600px){
+  #topbar{gap:4px;padding:0 6px}
+  .tbtn.icon{width:34px;height:34px;font-size:15px}
+  #topbar .logo{font-size:14px}
+  #projName{max-width:80px;font-size:11px}
+}
+@media(max-width:400px){
+  #topbar .logo-txt{display:none}
+  #projName{max-width:100px}
+}
 
 /* ── 지도 ── */
 #map{flex:1;width:100%;background:#aadaff;z-index:1}
@@ -191,12 +204,14 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 <div id="app">
   <!-- 상단 -->
   <div id="topbar">
-    <div class="logo"><span class="dot"></span>현장관리<span id="projName"></span></div>
+    <div class="logo"><span class="dot"></span><span class="logo-txt">현장관리</span></div>
+    <div id="projName"></div>
     <div class="spacer"></div>
-    <button class="tbtn" id="dashBtn">📊 현황표</button>
-    <button class="tbtn" id="perfBtn">🏆 실적</button>
-    <button class="tbtn" id="searchBtn">🔍</button>
-    <button class="tbtn admin" id="adminBtn">⚙</button>
+    <button class="tbtn icon" id="listBtn" title="목록">📋</button>
+    <button class="tbtn icon" id="dashBtn" title="현황표">📊</button>
+    <button class="tbtn icon" id="perfBtn" title="실적">🏆</button>
+    <button class="tbtn icon" id="searchBtn" title="검색">🔍</button>
+    <button class="tbtn icon admin" id="adminBtn" title="관리">⚙</button>
   </div>
 
   <!-- 지도 -->
@@ -253,6 +268,21 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
       <div class="field"><input id="searchInput" placeholder="포인트명, 레이어, 주소 검색..."></div>
       <div id="searchList"></div>
     </div>
+  </div>
+</div>
+
+<!-- 목록 모달 -->
+<div class="ovl" id="listOvl">
+  <div class="modal" style="max-height:82vh">
+    <div class="mhead"><h3>📋 전체 목록</h3><button class="mclose" data-close>×</button></div>
+    <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)">
+      <button class="lbtab btn btn-pri" data-tab="point" style="flex:1;padding:8px">포인트</button>
+      <button class="lbtab btn btn-sec" data-tab="line" style="flex:1;padding:8px">라인</button>
+    </div>
+    <div style="padding:8px 16px;border-bottom:1px solid var(--line)">
+      <input id="listFilter" placeholder="필터 (이름/레이어)" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;outline:none">
+    </div>
+    <div class="mbody" id="listModalBody" style="padding:0;max-height:50vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -600,6 +630,7 @@ window.goToPoint = function(name){
   const p = POINTS[name];
   if(p && p.la){
     map.setView([p.la, p.ln], 18);
+    const lo=document.getElementById('listOvl'); if(lo) lo.classList.remove('show');
     highlightPoint(name);
   }
 }
@@ -608,6 +639,7 @@ window.goToLine = function(idx){
   const ln = LINES[idx];
   if(ln && ln.pts){
     map.fitBounds(ln.pts, {padding:[80,80], maxZoom:19});
+    const lo=document.getElementById('listOvl'); if(lo) lo.classList.remove('show');
     highlightLine(idx);
   }
 }
@@ -674,26 +706,33 @@ function clearHighlight(){
 
 // ─── 목록 모달 렌더링 ───
 let _listTab = 'point';
+let _listFilter = '';
 function renderListModal(){
   const body = document.getElementById('listModalBody');
   if(_listTab === 'point'){
-    const names = Object.keys(POINTS).sort();
+    let names = Object.keys(POINTS).sort();
+    if(_listFilter) names = names.filter(n=>n.toLowerCase().includes(_listFilter));
     let html = '';
     names.forEach(name=>{
       const p = POINTS[name];
       const col = statusColor(name);
+      const state = pointState(name);
       const st = STATUS[name];
-      let stat = st&&st.done ? '완료' : (st&&st.worker ? (WORKER_NAMES[st.worker]||'담당') : '미할당');
-      let bg = st&&st.done ? '#dcfce7;color:#16a34a' : (st&&st.worker ? '#dbeafe;color:#1d4ed8' : '#fee2e2;color:#dc2626');
+      let stat, bg;
+      if(state==='done'){ stat='완료'; bg='#dcfce7;color:#16a34a'; }
+      else if(state==='assigned'){ stat=(WORKER_NAMES[st.worker]||'담당')+' 배치'; bg='#dbeafe;color:#1d4ed8'; }
+      else { stat='미할당'; bg='#fee2e2;color:#dc2626'; }
+      const added = p.added ? '<span style="color:#b45309">◆</span> ' : '';
       html += `<div class="litem" onclick="goToPoint('${name}')">
         <span class="ltag" style="background:${col}"></span>
-        <div><div class="lname">${name}</div>
+        <div style="flex:1;min-width:0"><div class="lname">${added}${name}</div>
         <div class="lsub">${p.la?.toFixed(6)}, ${p.ln?.toFixed(6)}</div></div>
         <span class="lstat" style="background:${bg}">${stat}</span></div>`;
     });
     body.innerHTML = html || '<div style="padding:30px;text-align:center;color:#94a3b8">포인트 없음</div>';
   } else {
-    const lines = LINES.map((l,i)=>({l,i})).filter(o=>o.l.tp!=='text');
+    let lines = LINES.map((l,i)=>({l,i})).filter(o=>o.l.tp!=='text');
+    if(_listFilter) lines = lines.filter(o=>(o.l.layer||'').toLowerCase().includes(_listFilter));
     let html = '';
     lines.forEach(({l,i})=>{
       const st = LINESTATUS['line_'+i];
@@ -701,24 +740,12 @@ function renderListModal(){
       const len = lineLength(l.pts);
       html += `<div class="litem" onclick="goToLine(${i})">
         <span class="ltag" style="background:${done?'#16a34a':(l.color||'#3b82f6')}"></span>
-        <div><div class="lname">${l.layer||'라인'} #${i+1}</div>
+        <div style="flex:1;min-width:0"><div class="lname">${l.layer||'라인'} #${i+1}</div>
         <div class="lsub">연장 ${len.toFixed(1)}m</div></div>
         <span class="lstat" style="background:${done?'#dcfce7;color:#16a34a':'#f1f5f9;color:#64748b'}">${done?'완료':'미완'}</span></div>`;
     });
     body.innerHTML = html || '<div style="padding:30px;text-align:center;color:#94a3b8">라인 없음</div>';
   }
-}
-
-function workerBtns(curWorker, onPick){
-  let html = '<div style="display:flex;gap:5px;margin:8px 0">';
-  for(let w=1; w<=3; w++){
-    const on = curWorker==w;
-    html += `<button class="wbtn" data-w="${w}" style="flex:1;padding:8px 4px;border:2px solid ${WORKER_COLORS[w]};
-      background:${on?WORKER_COLORS[w]:'#fff'};color:${on?'#fff':WORKER_COLORS[w]};
-      border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">${WORKER_NAMES[w]}</button>`;
-  }
-  html += '</div>';
-  return html;
 }
 
 function onPointClick(name){
@@ -1477,6 +1504,32 @@ function bindEvents(){
   document.getElementById('boxSelBtn').onclick = toggleBoxSelect;
   document.getElementById('selClose').onclick = ()=>{ clearBoxSelection(); toggleBoxSelect(); };
   document.getElementById('selCancel').onclick = cancelWorkerBatch;
+
+  // 목록
+  document.getElementById('listBtn').onclick = ()=>{
+    _listTab='point'; _listFilter='';
+    document.getElementById('listFilter').value='';
+    document.querySelectorAll('.lbtab').forEach(t=>{
+      t.classList.toggle('btn-pri', t.dataset.tab==='point');
+      t.classList.toggle('btn-sec', t.dataset.tab!=='point');
+    });
+    renderListModal();
+    openOvl('listOvl');
+  };
+  document.querySelectorAll('.lbtab').forEach(tab=>{
+    tab.onclick = ()=>{
+      _listTab = tab.dataset.tab;
+      document.querySelectorAll('.lbtab').forEach(t=>{
+        t.classList.toggle('btn-pri', t===tab);
+        t.classList.toggle('btn-sec', t!==tab);
+      });
+      renderListModal();
+    };
+  });
+  document.getElementById('listFilter').oninput = e=>{
+    _listFilter = e.target.value.trim().toLowerCase();
+    renderListModal();
+  };
 
   // 현황표 / 실적
   document.getElementById('dashBtn').onclick = ()=>{ renderDashboard(); openOvl('dashOvl'); };
