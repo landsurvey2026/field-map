@@ -153,8 +153,12 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 /* Leaflet 라벨 */
 .line-label{background:transparent;border:none;box-shadow:none;
   color:var(--w1);font-weight:800;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
-.pt-label{background:#fff;border:1px solid var(--line);border-radius:4px;
-  padding:1px 4px;font-size:10px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.pt-label{background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:5px;
+  padding:1px 5px;font-size:11px;font-weight:800;color:#0c1e4a;
+  box-shadow:0 1px 4px rgba(0,0,0,.2);white-space:nowrap}
+.pt-label.hl{font-size:22px !important;padding:4px 10px;border:2px solid #38bdf8;
+  background:#fff;color:#0ea5e9;z-index:9999 !important;box-shadow:0 0 0 4px rgba(56,189,248,.3),0 4px 12px rgba(0,0,0,.3)}
+.pt-label::before{display:none}
 
 @media(min-width:768px){
   #sheet{max-width:420px;left:auto;right:14px;bottom:14px;border-radius:16px;
@@ -180,6 +184,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   <div id="topbar">
     <div class="logo"><span class="dot"></span>현장관리<span id="projName"></span></div>
     <div class="spacer"></div>
+    <button class="tbtn" id="listBtn">📋 목록</button>
     <button class="tbtn" id="searchBtn">🔍 검색</button>
     <button class="tbtn admin" id="adminBtn">⚙ 관리</button>
   </div>
@@ -223,6 +228,21 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
       <div class="field"><input id="searchInput" placeholder="포인트명, 레이어, 주소 검색..."></div>
       <div id="searchList"></div>
     </div>
+  </div>
+</div>
+
+<!-- 목록 모달 -->
+<div class="ovl" id="listOvl">
+  <div class="modal" style="max-height:80vh">
+    <div class="mhead">
+      <h3>📋 전체 목록</h3>
+      <button class="mclose" data-close>×</button>
+    </div>
+    <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)">
+      <button class="lbtab btn btn-pri" data-tab="point" style="flex:1;padding:8px">포인트</button>
+      <button class="lbtab btn btn-sec" data-tab="line" style="flex:1;padding:8px">라인</button>
+    </div>
+    <div class="mbody" id="listModalBody" style="padding:0;max-height:55vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -364,7 +384,9 @@ function initMap(){
     if(zc){zc.style.marginTop='200px';zc.style.marginRight='10px';}
   },100);
 
-  map.on('click', onMapClick);
+  map.on('dblclick', onMapDblClick);
+  map.doubleClickZoom.disable();
+  map.on('zoomend', updateLabelVisibility);
 }
 
 function toggleLayer(){
@@ -377,8 +399,7 @@ function toggleLayer(){
   }
 }
 
-function onMapClick(e){
-  // 1단계에서는 주소조회만 (추후 확장)
+function onMapDblClick(e){
   reverseGeocode(e.latlng.lat, e.latlng.lng);
 }
 
@@ -387,8 +408,8 @@ function onMapClick(e){
 // ═══════════════════════════════════════════════════
 function statusColor(name){
   const st = STATUS[name];
-  if(st && st.done) return '#16a34a';
-  if(st && st.worker) return WORKER_COLORS[st.worker] || '#dc2626';
+  // 담당자 배정(=완료) 시 담당자 색, 미배정 시 빨강
+  if(st && st.worker) return WORKER_COLORS[st.worker] || '#16a34a';
   return '#dc2626';
 }
 
@@ -404,9 +425,26 @@ function renderPoints(){
     const mk = L.circleMarker([p.la, p.ln], {
       radius:6, fillColor:col, color:'#fff', weight:2, fillOpacity:1
     }).addTo(map);
-    mk.bindTooltip(name, {className:'pt-label', direction:'top', offset:[0,-8]});
+    // 번호 항상 표시 (permanent), 겹침 방지를 위해 방향 분산
+    mk.bindTooltip(name, {
+      permanent:true, className:'pt-label', direction:'top', offset:[0,-8]
+    });
     mk.on('click', ()=>{ onPointClick(name); L.DomEvent.stopPropagation(); });
     ptMarkers[name] = mk;
+  });
+  updateLabelVisibility();
+}
+
+// 줌 레벨에 따라 라벨 표시 (겹침 방지)
+function updateLabelVisibility(){
+  const z = map.getZoom();
+  const show = z >= 16;  // 16 이상에서만 번호 표시
+  Object.values(ptMarkers).forEach(mk=>{
+    const tt = mk.getTooltip();
+    if(tt){
+      const el = tt._container;
+      if(el) el.style.display = show ? '' : 'none';
+    }
   });
 }
 
@@ -432,10 +470,9 @@ function renderStats(){
   let counts = {un:0, w1:0, w2:0, w3:0, done:0};
   Object.keys(POINTS).forEach(name=>{
     const st = STATUS[name];
-    if(st && st.done) counts.done++;
-    else if(st && st.worker==1) counts.w1++;
-    else if(st && st.worker==2) counts.w2++;
-    else if(st && st.worker==3) counts.w3++;
+    if(st && st.worker==1){ counts.w1++; counts.done++; }
+    else if(st && st.worker==2){ counts.w2++; counts.done++; }
+    else if(st && st.worker==3){ counts.w3++; counts.done++; }
     else counts.un++;
   });
   const total = Object.keys(POINTS).length;
@@ -482,7 +519,118 @@ function renderAll(){
 
 window.goToPoint = function(name){
   const p = POINTS[name];
-  if(p && p.la){ map.setView([p.la, p.ln], 18); document.getElementById('sheet').classList.remove('open'); }
+  if(p && p.la){
+    map.setView([p.la, p.ln], 18);
+    document.getElementById('sheet').classList.remove('open');
+    document.getElementById('listOvl').classList.remove('show');
+    highlightPoint(name);
+  }
+}
+
+window.goToLine = function(idx){
+  const ln = LINES[idx];
+  if(ln && ln.pts){
+    map.fitBounds(ln.pts, {padding:[80,80], maxZoom:19});
+    document.getElementById('listOvl').classList.remove('show');
+    highlightLine(idx);
+  }
+}
+
+// ─── 5초 하이라이트 ───
+let _hlTimer = null;
+function highlightPoint(name){
+  // 기존 하이라이트 제거
+  clearHighlight();
+  const mk = ptMarkers[name];
+  if(!mk) return;
+  // 마커 강조
+  mk.setStyle({radius:14, weight:4, color:'#38bdf8', fillColor:'#0ea5e9'});
+  mk.setZIndexOffset?.(1000);
+  mk.bringToFront();
+  // 번호 라벨 2배 확대
+  const tt = mk.getTooltip();
+  if(tt && tt._container){
+    tt._container.style.display = '';
+    tt._container.classList.add('hl');
+  }
+  // 펄스 원
+  const p = POINTS[name];
+  const pulse = L.circleMarker([p.la, p.ln], {
+    radius:20, color:'#38bdf8', weight:3, fillColor:'#38bdf8', fillOpacity:.15
+  }).addTo(map);
+  window._hlPulse = pulse;
+  window._hlMarker = name;
+
+  _hlTimer = setTimeout(clearHighlight, 5000);
+}
+
+function highlightLine(idx){
+  clearHighlight();
+  const poly = lineLayers[idx];
+  if(!poly) return;
+  poly._origStyle = {color:poly.options.color, weight:poly.options.weight};
+  poly.setStyle({color:'#38bdf8', weight:7, opacity:1});
+  poly.bringToFront();
+  window._hlLine = idx;
+  _hlTimer = setTimeout(clearHighlight, 5000);
+}
+
+function clearHighlight(){
+  if(_hlTimer){ clearTimeout(_hlTimer); _hlTimer=null; }
+  // 포인트 복원
+  if(window._hlMarker){
+    const mk = ptMarkers[window._hlMarker];
+    if(mk){
+      mk.setStyle({radius:6, weight:2, color:'#fff', fillColor:statusColor(window._hlMarker)});
+      const tt = mk.getTooltip();
+      if(tt && tt._container) tt._container.classList.remove('hl');
+    }
+    window._hlMarker = null;
+  }
+  if(window._hlPulse){ map.removeLayer(window._hlPulse); window._hlPulse=null; }
+  // 라인 복원
+  if(window._hlLine != null){
+    const poly = lineLayers[window._hlLine];
+    if(poly && poly._origStyle) poly.setStyle(poly._origStyle);
+    window._hlLine = null;
+  }
+}
+
+// ─── 목록 모달 렌더링 ───
+let _listTab = 'point';
+function renderListModal(){
+  const body = document.getElementById('listModalBody');
+  if(_listTab === 'point'){
+    const names = Object.keys(POINTS).sort();
+    let html = '';
+    names.forEach(name=>{
+      const p = POINTS[name];
+      const col = statusColor(name);
+      const st = STATUS[name];
+      let stat = st&&st.done ? '완료' : (st&&st.worker ? (WORKER_NAMES[st.worker]||'담당') : '미할당');
+      let bg = st&&st.done ? '#dcfce7;color:#16a34a' : (st&&st.worker ? '#dbeafe;color:#1d4ed8' : '#fee2e2;color:#dc2626');
+      html += `<div class="litem" onclick="goToPoint('${name}')">
+        <span class="ltag" style="background:${col}"></span>
+        <div><div class="lname">${name}</div>
+        <div class="lsub">${p.la?.toFixed(6)}, ${p.ln?.toFixed(6)}</div></div>
+        <span class="lstat" style="background:${bg}">${stat}</span></div>`;
+    });
+    body.innerHTML = html || '<div style="padding:30px;text-align:center;color:#94a3b8">포인트 없음</div>';
+  } else {
+    const lines = LINES.map((l,i)=>({l,i})).filter(o=>o.l.tp!=='text');
+    let html = '';
+    lines.forEach(({l,i})=>{
+      const st = LINESTATUS['line_'+i];
+      const done = st&&st.done;
+      const len = lineLength(l.pts);
+      html += `<div class="litem" onclick="goToLine(${i})">
+        <span class="ltag" style="background:${done?'#16a34a':(l.color||'#3b82f6')}"></span>
+        <div><div class="lname">${l.layer||'라인'} #${i+1}</div>
+        <div class="lsub">연장 ${len.toFixed(1)}m</div></div>
+        <span class="lstat" style="background:${done?'#dcfce7;color:#16a34a':'#f1f5f9;color:#64748b'}">${done?'완료':'미완'}</span></div>`;
+    });
+    body.innerHTML = html || '<div style="padding:30px;text-align:center;color:#94a3b8">라인 없음</div>';
+  }
 }
 
 function workerBtns(curWorker, onPick){
@@ -503,32 +651,43 @@ function onPointClick(name){
   const done = st.done;
   const worker = st.worker || 0;
 
-  const html = `<div style="min-width:200px">
+  // 담당자가 배정되면 = 완료처리됨. 완료취소 = 담당자 해제
+  let workerBox = '<div style="display:flex;gap:5px;margin:8px 0">';
+  for(let w=1; w<=3; w++){
+    const on = worker==w;
+    workerBox += `<button class="wbtn" data-w="${w}" style="flex:1;padding:10px 4px;border:2px solid ${WORKER_COLORS[w]};
+      background:${on?WORKER_COLORS[w]:'#fff'};color:${on?'#fff':WORKER_COLORS[w]};
+      border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+      ${on?'✓ ':''}${WORKER_NAMES[w]}</button>`;
+  }
+  workerBox += '</div>';
+
+  const html = `<div style="min-width:210px">
     <div style="font-weight:800;font-size:15px;color:#0c1e4a;margin-bottom:3px">📍 ${name}</div>
     <div style="font-size:11px;color:#64748b;margin-bottom:8px">${p.la.toFixed(6)}, ${p.ln.toFixed(6)}</div>
-    <div style="font-size:11px;color:#64748b;font-weight:700">담당자 배정</div>
-    ${workerBtns(worker)}
-    <button class="doneBtn" style="width:100%;padding:9px;border:none;border-radius:8px;margin-bottom:5px;
-      background:${done?'#f1f5f9':'#16a34a'};color:${done?'#666':'#fff'};font-size:13px;font-weight:700;cursor:pointer">
-      ${done?'↩ 완료 취소':'✓ 완료 처리'}</button>
+    <div style="font-size:11px;color:#64748b;font-weight:700">담당자 선택 (완료처리)</div>
+    ${workerBox}
+    ${worker ? `<button class="cancelBtn" style="width:100%;padding:9px;border:none;border-radius:8px;margin-bottom:5px;
+      background:#f1f5f9;color:#475569;font-size:13px;font-weight:700;cursor:pointer">↩ 완료 취소</button>` : ''}
     <button class="ptDelBtn" style="width:100%;padding:8px;border:1px solid #fca5a5;border-radius:8px;
       background:#fff0f0;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer">🗑 측량불가 - 점 삭제</button>
   </div>`;
 
-  const popup = L.popup({maxWidth:280}).setLatLng([p.la, p.ln]).setContent(html).openOn(map);
+  L.popup({maxWidth:280}).setLatLng([p.la, p.ln]).setContent(html).openOn(map);
 
   setTimeout(()=>{
     document.querySelectorAll('.wbtn').forEach(b=>{
       b.onclick = ()=>{
         const w = parseInt(b.dataset.w);
+        // 담당자 선택 = 완료처리 (worker 배정 + done)
         const newW = (worker==w) ? 0 : w;
-        setPointStatus(name, {worker:newW, done:false});
+        setPointStatus(name, {worker:newW, done:newW>0, doneAt:newW>0?Date.now():null});
         map.closePopup();
       };
     });
-    const db2 = document.querySelector('.doneBtn');
-    if(db2) db2.onclick = ()=>{
-      setPointStatus(name, {done:!done, doneAt:!done?Date.now():null});
+    const cb = document.querySelector('.cancelBtn');
+    if(cb) cb.onclick = ()=>{
+      setPointStatus(name, {worker:0, done:false, doneAt:null});
       map.closePopup();
     };
     const delBtn = document.querySelector('.ptDelBtn');
@@ -728,8 +887,17 @@ function reverseGeocode(lat, lng){
       const road = results.find(r=>r.type==='road');
       addr = (parcel||road||results[0]).text;
     }
-    L.popup().setLatLng([lat,lng])
-      .setContent(`<b>${addr}</b><br><span style="color:#64748b;font-size:11px">${lat.toFixed(6)}, ${lng.toFixed(6)}</span>`)
+    const rvUrl = `https://map.kakao.com/link/roadview/${lat},${lng}`;
+    const kakaoUrl = `https://map.kakao.com/link/map/위치,${lat},${lng}`;
+    L.popup({maxWidth:280}).setLatLng([lat,lng])
+      .setContent(`<div style="min-width:200px">
+        <div style="font-weight:700;font-size:14px;color:#0c1e4a;margin-bottom:3px">${addr}</div>
+        <div style="color:#64748b;font-size:11px;margin-bottom:8px">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+        <div style="display:flex;gap:5px">
+          <a href="${rvUrl}" target="_blank" style="flex:1;padding:8px;background:#fee500;color:#3c1e1e;border-radius:8px;font-size:12px;font-weight:700;text-align:center;text-decoration:none">🛣️ 로드뷰</a>
+          <a href="${kakaoUrl}" target="_blank" style="flex:1;padding:8px;background:#0c1e4a;color:#fff;border-radius:8px;font-size:12px;font-weight:700;text-align:center;text-decoration:none">🗺️ 카카오맵</a>
+        </div>
+      </div>`)
       .openOn(map);
   }).catch(e=>{
     L.popup().setLatLng([lat,lng])
@@ -805,6 +973,26 @@ function bindEvents(){
   document.getElementById('sheetHandle').onclick = ()=>{
     document.getElementById('sheet').classList.toggle('open');
   };
+
+  // 목록
+  document.getElementById('listBtn').onclick = ()=>{
+    _listTab='point'; renderListModal();
+    document.querySelectorAll('.lbtab').forEach(t=>{
+      t.classList.toggle('btn-pri', t.dataset.tab==='point');
+      t.classList.toggle('btn-sec', t.dataset.tab!=='point');
+    });
+    openOvl('listOvl');
+  };
+  document.querySelectorAll('.lbtab').forEach(tab=>{
+    tab.onclick = ()=>{
+      _listTab = tab.dataset.tab;
+      document.querySelectorAll('.lbtab').forEach(t=>{
+        t.classList.toggle('btn-pri', t===tab);
+        t.classList.toggle('btn-sec', t!==tab);
+      });
+      renderListModal();
+    };
+  });
 
   // 검색
   document.getElementById('searchBtn').onclick = ()=>openOvl('searchOvl');
@@ -887,10 +1075,13 @@ function doSearch(e){
       <div class="lname">${name}</div></div>`;
   });
   // 레이어 검색
-  const layers = [...new Set(LINES.map(l=>l.layer).filter(Boolean))];
-  layers.filter(l=>l.toLowerCase().includes(q)).slice(0,10).forEach(layer=>{
-    html += `<div class="litem"><span class="ltag" style="background:#3b82f6"></span>
-      <div><div class="lname">${layer}</div><div class="lsub">레이어</div></div></div>`;
+  LINES.forEach((l,i)=>{
+    if(l.tp==='text' || !l.layer) return;
+    if(l.layer.toLowerCase().includes(q)){
+      html += `<div class="litem" onclick="goToLine(${i});document.getElementById('searchOvl').classList.remove('show')">
+        <span class="ltag" style="background:${l.color||'#3b82f6'}"></span>
+        <div><div class="lname">${l.layer} #${i+1}</div><div class="lsub">라인</div></div></div>`;
+    }
   });
   list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#94a3b8">결과 없음</div>';
 }
