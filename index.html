@@ -184,9 +184,10 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   <div id="topbar">
     <div class="logo"><span class="dot"></span>현장관리<span id="projName"></span></div>
     <div class="spacer"></div>
-    <button class="tbtn" id="listBtn">📋 목록</button>
-    <button class="tbtn" id="searchBtn">🔍 검색</button>
-    <button class="tbtn admin" id="adminBtn">⚙ 관리</button>
+    <button class="tbtn" id="dashBtn">📊 현황표</button>
+    <button class="tbtn" id="perfBtn">🏆 실적</button>
+    <button class="tbtn" id="searchBtn">🔍</button>
+    <button class="tbtn admin" id="adminBtn">⚙</button>
   </div>
 
   <!-- 지도 -->
@@ -232,11 +233,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
     </div>
   </div>
 
-  <!-- 하단 시트 -->
-  <div id="sheet">
-    <div id="sheetHandle"><span class="grab"></span><span id="sheetTitle">목록</span></div>
-    <div id="sheetBody"></div>
-  </div>
+
 </div>
 
 <!-- 검색 모달 -->
@@ -250,18 +247,19 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   </div>
 </div>
 
-<!-- 목록 모달 -->
-<div class="ovl" id="listOvl">
-  <div class="modal" style="max-height:80vh">
-    <div class="mhead">
-      <h3>📋 전체 목록</h3>
-      <button class="mclose" data-close>×</button>
-    </div>
-    <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)">
-      <button class="lbtab btn btn-pri" data-tab="point" style="flex:1;padding:8px">포인트</button>
-      <button class="lbtab btn btn-sec" data-tab="line" style="flex:1;padding:8px">라인</button>
-    </div>
-    <div class="mbody" id="listModalBody" style="padding:0;max-height:55vh;overflow-y:auto"></div>
+<!-- 현황표 모달 -->
+<div class="ovl" id="dashOvl">
+  <div class="modal" style="max-width:440px">
+    <div class="mhead"><h3>📊 작업 현황표</h3><button class="mclose" data-close>×</button></div>
+    <div class="mbody" id="dashBody"></div>
+  </div>
+</div>
+
+<!-- 실적 모달 -->
+<div class="ovl" id="perfOvl">
+  <div class="modal" style="max-width:440px">
+    <div class="mhead"><h3>🏆 담당자 실적</h3><button class="mclose" data-close>×</button></div>
+    <div class="mbody" id="perfBody"></div>
   </div>
 </div>
 
@@ -374,6 +372,7 @@ let STATUS = {};      // {name: {done,worker}}
 let LINESTATUS = {};  // {line_0:{done,worker}}
 let WORKER_NAMES = {1:'담당자1',2:'담당자2',3:'담당자3'};
 let PROJECTS = {};    // {pid: {name}}
+let DELETED_COUNT = 0;
 let ptMarkers = {}, lineLayers = [];
 let gpsMarker=null, gpsCircle=null, gpsWatch=null;
 
@@ -409,7 +408,26 @@ function initMap(){
 
   map.on('dblclick', onMapDblClick);
   map.doubleClickZoom.disable();
-  map.on('zoomend', updateLabelVisibility);
+  map.on('zoomend', ()=>{ updateLabelVisibility(); saveMapPos(); });
+  map.on('moveend', ()=>{ saveMapPos(); renderPoints(); renderLines(); });
+}
+
+// 마지막 위치 저장/복원
+function saveMapPos(){
+  if(!map || !PROJ_ID) return;
+  const c = map.getCenter();
+  localStorage.setItem('mappos_'+PROJ_ID, JSON.stringify({lat:c.lat, lng:c.lng, z:map.getZoom()}));
+}
+function restoreMapPos(){
+  if(!PROJ_ID) return false;
+  try{
+    const saved = JSON.parse(localStorage.getItem('mappos_'+PROJ_ID));
+    if(saved && saved.lat){
+      map.setView([saved.lat, saved.lng], saved.z);
+      return true;
+    }
+  }catch(e){}
+  return false;
 }
 
 function toggleLayer(){
@@ -436,55 +454,82 @@ function statusColor(name){
   return '#dc2626';
 }
 
+// ★ 성능 최적화: 화면에 보이는 점만 렌더링 (viewport culling)
+let _ptLayer = null;
+let _renderTimer = null;
+
 function renderPoints(){
-  // 기존 제거
-  Object.values(ptMarkers).forEach(m=>map.removeLayer(m));
+  // 디바운스 - 연속 호출 방지
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(_doRenderPoints, 80);
+}
+
+function _doRenderPoints(){
+  if(!_ptLayer){
+    _ptLayer = L.layerGroup().addTo(map);
+  }
+  _ptLayer.clearLayers();
   ptMarkers = {};
 
+  const z = map.getZoom();
+  const showLabel = z >= 17;
+  const radius = z >= 17 ? 7 : z >= 14 ? 5 : 4;
+
+  // 화면 범위 (여유 20%)
+  const bounds = map.getBounds().pad(0.2);
+
+  let rendered = 0;
   Object.keys(POINTS).forEach(name=>{
     const p = POINTS[name];
     if(!p.la || !p.ln) return;
+    // ★ 화면 밖이면 건너뜀
+    if(!bounds.contains([p.la, p.ln])) return;
+
     const col = statusColor(name);
+    const added = p.added;  // 추가점 여부
     const mk = L.circleMarker([p.la, p.ln], {
-      radius:6, fillColor:col, color:'#fff', weight:2, fillOpacity:1
-    }).addTo(map);
-    // 번호 항상 표시 (permanent), 겹침 방지를 위해 방향 분산
-    mk.bindTooltip(name, {
-      permanent:true, className:'pt-label', direction:'top', offset:[0,-8]
+      radius: radius,
+      fillColor: col,
+      color: added ? '#fbbf24' : '#fff',  // 추가점은 노란 테두리
+      weight: added ? 3 : 2,
+      fillOpacity: 1
     });
-    mk.on('click', ()=>{ onPointClick(name); L.DomEvent.stopPropagation(); });
-    ptMarkers[name] = mk;
-  });
-  updateLabelVisibility();
-}
-
-// 줌 레벨에 따라 라벨 표시 (겹침 방지)
-function updateLabelVisibility(){
-  const z = map.getZoom();
-  const show = z >= 17;  // 16 이상에서만 번호 표시
-  Object.values(ptMarkers).forEach(mk=>{
-    const tt = mk.getTooltip();
-    if(tt){
-      const el = tt._container;
-      if(el) el.style.display = show ? '' : 'none';
+    if(showLabel){
+      mk.bindTooltip(name, {permanent:true, className:'pt-label', direction:'top', offset:[0,-8]});
     }
+    mk.on('click', ()=>{ onPointClick(name); L.DomEvent.stopPropagation(); });
+    _ptLayer.addLayer(mk);
+    ptMarkers[name] = mk;
+    rendered++;
   });
 }
 
+function updateLabelVisibility(){
+  // 줌 변경 시 다시 렌더 (라벨 표시 갱신)
+  renderPoints();
+}
+
+let _lineLayer = null;
 function renderLines(){
-  lineLayers.forEach(l=>map.removeLayer(l));
+  if(!_lineLayer){ _lineLayer = L.layerGroup().addTo(map); }
+  _lineLayer.clearLayers();
   lineLayers = [];
 
+  const bounds = map.getBounds().pad(0.3);
+
   LINES.forEach((ln, idx)=>{
-    if(ln.tp==='text' || !ln.pts || ln.pts.length<2) return;
+    if(ln.tp==='text' || !ln.pts || ln.pts.length<2){ lineLayers[idx]=null; return; }
+    // 라인 일부라도 화면에 걸치면 그림
+    const inView = ln.pts.some(pt=>bounds.contains(pt));
+    if(!inView){ lineLayers[idx]=null; return; }
+
     const st = LINESTATUS['line_'+idx];
     const done = st && st.done;
     const col = done ? '#16a34a' : (ln.color || '#3b82f6');
-    const poly = L.polyline(ln.pts, {
-      color: col, weight: done?4:3, opacity:.9
-    }).addTo(map);
+    const poly = L.polyline(ln.pts, {color: col, weight: done?4:3, opacity:.9});
     poly.on('click', ()=>{ onLineClick(idx); L.DomEvent.stopPropagation(); });
-    lineLayers.push(poly);
+    _lineLayer.addLayer(poly);
+    lineLayers[idx] = poly;
   });
 }
 
@@ -510,42 +555,16 @@ function renderStats(){
   `;
 }
 
-function renderSheet(){
-  const body = document.getElementById('sheetBody');
-  const title = document.getElementById('sheetTitle');
-  const names = Object.keys(POINTS).sort();
-  const lineCount = LINES.filter(l=>l.tp!=='text').length;
-  title.textContent = `포인트 ${names.length} · 라인 ${lineCount}`;
-
-  let html = '';
-  names.forEach(name=>{
-    const p = POINTS[name];
-    const col = statusColor(name);
-    const st = STATUS[name];
-    let statTxt='', statBg='';
-    if(st && st.done){statTxt='완료';statBg='#dcfce7;color:#16a34a';}
-    else if(st && st.worker){statTxt=WORKER_NAMES[st.worker]||('담당'+st.worker);statBg='#dbeafe;color:#1d4ed8';}
-    else {statTxt='미할당';statBg='#fee2e2;color:#dc2626';}
-    html += `<div class="litem" onclick="goToPoint('${name}')">
-      <span class="ltag" style="background:${col}"></span>
-      <div><div class="lname">${name}</div>
-      <div class="lsub">${p.la?.toFixed(6)}, ${p.ln?.toFixed(6)}</div></div>
-      <span class="lstat" style="background:${statBg}">${statTxt}</span>
-    </div>`;
-  });
-  body.innerHTML = html || '<div style="padding:30px;text-align:center;color:#94a3b8">포인트가 없습니다</div>';
-}
+function renderSheet(){ /* 제거됨 */ }
 
 function renderAll(){
-  renderPoints(); renderLines(); renderStats(); renderSheet();
+  renderPoints(); renderLines(); renderStats();
 }
 
 window.goToPoint = function(name){
   const p = POINTS[name];
   if(p && p.la){
     map.setView([p.la, p.ln], 18);
-    document.getElementById('sheet').classList.remove('open');
-    document.getElementById('listOvl').classList.remove('show');
     highlightPoint(name);
   }
 }
@@ -554,7 +573,6 @@ window.goToLine = function(idx){
   const ln = LINES[idx];
   if(ln && ln.pts){
     map.fitBounds(ln.pts, {padding:[80,80], maxZoom:19});
-    document.getElementById('listOvl').classList.remove('show');
     highlightLine(idx);
   }
 }
@@ -722,6 +740,9 @@ function onPointClick(name){
 function deletePoint(name){
   if(!confirm(`'${name}' 점을 삭제할까요?\n\n측량불가 점을 제거합니다.`)) return;
   if(!confirm(`정말 삭제하시겠습니까?\n\n'${name}' 점과 좌표가 완전히 사라집니다.\n이 작업은 되돌릴 수 없습니다.`)) return;
+  // 삭제 카운터 증가
+  const delRef = db.ref('projects/'+PROJ_ID+'/deletedCount');
+  delRef.transaction(cur => (cur||0) + 1);
   Promise.all([
     db.ref('projects/'+PROJ_ID+'/points/'+name).remove(),
     db.ref('projects/'+PROJ_ID+'/status/'+name).remove()
@@ -864,6 +885,8 @@ function loadProject(pid){
   ref.child('status').on('value', s=>{ STATUS = s.val()||{}; renderAll(); });
   // 라인 상태
   ref.child('lineStatus').on('value', s=>{ LINESTATUS = s.val()||{}; renderLines(); });
+  // 삭제 카운터
+  ref.child('deletedCount').on('value', s=>{ DELETED_COUNT = s.val()||0; });
   // 담당자 이름
   ref.child('workerNames').on('value', s=>{
     const v = s.val();
@@ -878,8 +901,8 @@ function loadProject(pid){
     }
   });
 
-  // 첫 로드 시 전체보기
-  setTimeout(fitAll, 800);
+  // 첫 로드 시: 저장된 위치 복원, 없으면 전체보기
+  setTimeout(()=>{ if(!restoreMapPos()) fitAll(); }, 800);
 }
 
 function fitAll(){
@@ -1132,6 +1155,140 @@ function cancelWorkerBatch(){
   });
 }
 
+// ═══════════════════════════════════════════════════
+//  현황표 / 실적 통계
+// ═══════════════════════════════════════════════════
+function calcStats(){
+  const s = {
+    total: 0, base: 0, added: 0, deleted: DELETED_COUNT,
+    unassigned: 0, done: 0,
+    byWorker: {1:0, 2:0, 3:0},
+    addedByWorker: {1:0, 2:0, 3:0},
+    addedDone: 0, addedUnassigned: 0
+  };
+  Object.keys(POINTS).forEach(name=>{
+    const p = POINTS[name];
+    const st = STATUS[name] || {};
+    s.total++;
+    const isAdded = p.added;
+    if(isAdded) s.added++; else s.base++;
+
+    if(st.worker){
+      s.done++;
+      s.byWorker[st.worker] = (s.byWorker[st.worker]||0) + 1;
+      if(isAdded){ s.addedDone++; s.addedByWorker[st.worker]=(s.addedByWorker[st.worker]||0)+1; }
+    }else{
+      s.unassigned++;
+      if(isAdded) s.addedUnassigned++;
+    }
+  });
+  // 전체 물량 = 현재 + 삭제 (원래 받은 양)
+  s.originalTotal = s.total + s.deleted;
+  return s;
+}
+
+function renderDashboard(){
+  const s = calcStats();
+  const pct = s.total ? Math.round(s.done/s.total*100) : 0;
+  const body = document.getElementById('dashBody');
+  body.innerHTML = `
+    <!-- 전체 요약 -->
+    <div style="background:linear-gradient(135deg,#0c1e4a,#0a3060);color:#fff;border-radius:14px;padding:18px;margin-bottom:16px">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">전체 물량 (현재)</div>
+      <div style="font-size:36px;font-weight:900;line-height:1">${s.total}<span style="font-size:16px;color:#38bdf8"> 개</span></div>
+      <div style="display:flex;gap:16px;margin-top:12px;font-size:13px">
+        <div><span style="color:#38bdf8">완료</span> ${s.done} (${pct}%)</div>
+        <div><span style="color:#fca5a5">미할당</span> ${s.unassigned}</div>
+      </div>
+      <div style="margin-top:10px;height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#0ea5e9,#38bdf8)"></div>
+      </div>
+    </div>
+
+    <!-- 물량 구성 -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:800;color:#0c1e4a;margin-bottom:8px">📦 물량 구성</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:#f1f5f9;border-radius:10px;padding:12px">
+          <div style="font-size:11px;color:#64748b">기본 점</div>
+          <div style="font-size:22px;font-weight:800;color:#0c1e4a">${s.base}</div>
+        </div>
+        <div style="background:#fef3c7;border-radius:10px;padding:12px;border:1px solid #fbbf24">
+          <div style="font-size:11px;color:#92400e">◆ 추가 받은 점</div>
+          <div style="font-size:22px;font-weight:800;color:#b45309">${s.added}</div>
+        </div>
+        <div style="background:#fee2e2;border-radius:10px;padding:12px">
+          <div style="font-size:11px;color:#991b1b">🗑 삭제됨</div>
+          <div style="font-size:22px;font-weight:800;color:#dc2626">${s.deleted}</div>
+        </div>
+        <div style="background:#e0f2fe;border-radius:10px;padding:12px">
+          <div style="font-size:11px;color:#075985">원 물량</div>
+          <div style="font-size:22px;font-weight:800;color:#0369a1">${s.originalTotal}</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:6px">* 원 물량 = 현재 ${s.total} + 삭제 ${s.deleted}</div>
+    </div>
+
+    <!-- 담당자별 배치 -->
+    <div style="margin-bottom:8px">
+      <div style="font-size:13px;font-weight:800;color:#0c1e4a;margin-bottom:8px">👷 담당자별 배치/완료</div>
+      ${[1,2,3].map(w=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8fafc;border-radius:10px;margin-bottom:6px">
+          <span style="width:12px;height:12px;border-radius:50%;background:${WORKER_COLORS[w]}"></span>
+          <span style="font-weight:700;flex:1">${WORKER_NAMES[w]}</span>
+          <span style="font-size:18px;font-weight:800;color:${WORKER_COLORS[w]}">${s.byWorker[w]}</span>
+          <span style="font-size:11px;color:#94a3b8">개 ${s.addedByWorker[w]>0?`(◆${s.addedByWorker[w]})`:''}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderPerformance(){
+  const s = calcStats();
+  const body = document.getElementById('perfBody');
+  const maxW = Math.max(s.byWorker[1], s.byWorker[2], s.byWorker[3], 1);
+
+  body.innerHTML = `
+    <!-- 개인별 실적 막대 -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:13px;font-weight:800;color:#0c1e4a;margin-bottom:12px">📈 개인별 완료 실적</div>
+      ${[1,2,3].map(w=>{
+        const cnt = s.byWorker[w];
+        const barPct = Math.round(cnt/maxW*100);
+        return `<div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-weight:700;font-size:13px">${WORKER_NAMES[w]}</span>
+            <span style="font-weight:800;color:${WORKER_COLORS[w]}">${cnt}개 ${s.addedByWorker[w]>0?`<span style="font-size:11px;color:#b45309">(추가 ${s.addedByWorker[w]})</span>`:''}</span>
+          </div>
+          <div style="height:14px;background:#f1f5f9;border-radius:7px;overflow:hidden">
+            <div style="height:100%;width:${barPct}%;background:${WORKER_COLORS[w]};border-radius:7px;transition:width .5s"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- 전체 진행 -->
+    <div style="background:#f8fafc;border-radius:12px;padding:16px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:800;color:#0c1e4a;margin-bottom:10px">📊 전체 진행률</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:32px;font-weight:900;color:#0c1e4a">${s.total?Math.round(s.done/s.total*100):0}<span style="font-size:18px">%</span></div>
+        <div style="text-align:right;font-size:13px;color:#64748b">
+          <div>완료 <b style="color:#16a34a">${s.done}</b> / ${s.total}</div>
+          <div>잔여 <b style="color:#dc2626">${s.unassigned}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 개인별 잔여 (전체 미할당을 인원으로 나눔 참고용) -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px">
+      <div style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:8px">⏳ 남은 물량</div>
+      <div style="font-size:24px;font-weight:900;color:#b45309">${s.unassigned}<span style="font-size:14px"> 개 미할당</span></div>
+      ${s.addedUnassigned>0?`<div style="font-size:12px;color:#92400e;margin-top:4px">이 중 추가점 ${s.addedUnassigned}개</div>`:''}
+    </div>
+  `;
+}
+
 function updateLegend(){
   const lg = document.getElementById('legend');
   lg.innerHTML = `
@@ -1162,30 +1319,9 @@ function bindEvents(){
   document.getElementById('selClose').onclick = ()=>{ clearBoxSelection(); toggleBoxSelect(); };
   document.getElementById('selCancel').onclick = cancelWorkerBatch;
 
-  // 시트 토글
-  document.getElementById('sheetHandle').onclick = ()=>{
-    document.getElementById('sheet').classList.toggle('open');
-  };
-
-  // 목록
-  document.getElementById('listBtn').onclick = ()=>{
-    _listTab='point'; renderListModal();
-    document.querySelectorAll('.lbtab').forEach(t=>{
-      t.classList.toggle('btn-pri', t.dataset.tab==='point');
-      t.classList.toggle('btn-sec', t.dataset.tab!=='point');
-    });
-    openOvl('listOvl');
-  };
-  document.querySelectorAll('.lbtab').forEach(tab=>{
-    tab.onclick = ()=>{
-      _listTab = tab.dataset.tab;
-      document.querySelectorAll('.lbtab').forEach(t=>{
-        t.classList.toggle('btn-pri', t===tab);
-        t.classList.toggle('btn-sec', t!==tab);
-      });
-      renderListModal();
-    };
-  });
+  // 현황표 / 실적
+  document.getElementById('dashBtn').onclick = ()=>{ renderDashboard(); openOvl('dashOvl'); };
+  document.getElementById('perfBtn').onclick = ()=>{ renderPerformance(); openOvl('perfOvl'); };
 
   // 검색
   document.getElementById('searchBtn').onclick = ()=>openOvl('searchOvl');
@@ -1578,12 +1714,19 @@ async function handleXLS(file){
     let final = points, addInfo = '';
     if(append){
       let dup = 0, add = 0;
+      const now = Date.now();
       final = Object.assign({}, POINTS);
       Object.keys(points).forEach(nm=>{
-        if(final[nm]) dup++; else add++;
-        final[nm] = points[nm];
+        if(final[nm]){ dup++; final[nm] = points[nm]; }
+        else {
+          add++;
+          // ★ 추가점 표시
+          points[nm].added = true;
+          points[nm].addedAt = now;
+          final[nm] = points[nm];
+        }
       });
-      addInfo = ` (신규 ${add}, 중복갱신 ${dup})`;
+      addInfo = ` (추가점 ${add}, 갱신 ${dup})`;
     }
     await db.ref('projects/'+PROJ_ID+'/points').set(final);
     log.textContent = `✅ ${bestPts.length}개 좌표 ${append?'추가':'업로드'} 완료${addInfo}`;
