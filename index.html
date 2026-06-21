@@ -197,6 +197,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 
   <!-- 우측 도구 -->
   <div id="tools">
+    <button class="tool" id="boxSelBtn" title="범위 선택">▣</button>
     <button class="tool" id="layerBtn" title="지도 전환">🗺️</button>
     <button class="tool" id="gpsBtn" title="내 위치">📍</button>
     <button class="tool" id="fitBtn" title="전체 보기">⬜</button>
@@ -212,6 +213,24 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   </div>
 
   <div id="credit">Dev. Seo Young Min</div>
+
+  <!-- 범위선택 안내/패널 -->
+  <div id="boxHint" style="display:none;position:absolute;top:62px;left:50%;transform:translateX(-50%);
+    z-index:600;background:#0c1e4a;color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;
+    box-shadow:0 4px 16px rgba(0,0,0,.3)">드래그하여 영역을 선택하세요</div>
+
+  <!-- 선택된 포인트 일괄배정 패널 -->
+  <div id="selPanel" style="display:none;position:absolute;bottom:60px;left:50%;transform:translateX(-50%);
+    z-index:700;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 6px 28px rgba(0,0,0,.25);
+    min-width:280px">
+    <div style="font-size:14px;font-weight:800;color:#0c1e4a;margin-bottom:10px">
+      <span id="selCount">0</span>개 선택됨 - 담당자 일괄 배정</div>
+    <div id="selWorkerBtns" style="display:flex;gap:6px;margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px">
+      <button id="selCancel" class="btn btn-sec" style="flex:1">완료취소</button>
+      <button id="selClose" class="btn btn-sec" style="flex:1">닫기</button>
+    </div>
+  </div>
 
   <!-- 하단 시트 -->
   <div id="sheet">
@@ -362,7 +381,11 @@ let gpsMarker=null, gpsCircle=null, gpsWatch=null;
 //  지도 초기화
 // ═══════════════════════════════════════════════════
 function initMap(){
-  map = L.map('map', {zoomControl:false, attributionControl:false}).setView([37.5,127], 11);
+  map = L.map('map', {
+    zoomControl:false, attributionControl:false,
+    preferCanvas:true,  // ★ Canvas 렌더링 (성능 대폭 향상)
+    renderer: L.canvas({padding:0.5})
+  }).setView([37.5,127], 11);
 
   baseLayer = L.tileLayer(
     `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Base/{z}/{y}/{x}.png`,
@@ -438,7 +461,7 @@ function renderPoints(){
 // 줌 레벨에 따라 라벨 표시 (겹침 방지)
 function updateLabelVisibility(){
   const z = map.getZoom();
-  const show = z >= 16;  // 16 이상에서만 번호 표시
+  const show = z >= 17;  // 16 이상에서만 번호 표시
   Object.values(ptMarkers).forEach(mk=>{
     const tt = mk.getTooltip();
     if(tt){
@@ -875,18 +898,39 @@ function updateShareUrl(){
 // ═══════════════════════════════════════════════════
 //  주소 조회 (VWorld 역지오코딩)
 // ═══════════════════════════════════════════════════
+let _kakaoReady = false, _kakaoGeocoder = null;
+function loadKakao(cb){
+  if(_kakaoGeocoder){ cb(_kakaoGeocoder); return; }
+  if(window.kakao && kakao.maps && kakao.maps.services){
+    _kakaoGeocoder = new kakao.maps.services.Geocoder(); cb(_kakaoGeocoder); return;
+  }
+  const sc = document.createElement('script');
+  sc.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=eb879946d11d6627f85d1ef988dd0de8&libraries=services&autoload=false';
+  sc.onload = ()=> kakao.maps.load(()=>{
+    _kakaoGeocoder = new kakao.maps.services.Geocoder(); cb(_kakaoGeocoder);
+  });
+  sc.onerror = ()=> cb(null);
+  document.head.appendChild(sc);
+}
+
 function reverseGeocode(lat, lng){
-  const url = `https://api.vworld.kr/req/address?service=address&request=getAddress&version=2.0&crs=epsg:4326&point=${lng},${lat}&format=json&type=both&key=${VW_KEY}`;
-  // JSONP 방식이 필요할 수 있으나 우선 fetch 시도
-  fetch(url).then(r=>r.json()).then(d=>{
-    let addr = '주소를 찾을 수 없습니다';
-    if(d.response && d.response.status==='OK' && d.response.result){
-      const results = d.response.result;
-      // 지번(parcel) 우선
-      const parcel = results.find(r=>r.type==='parcel');
-      const road = results.find(r=>r.type==='road');
-      addr = (parcel||road||results[0]).text;
-    }
+  loadKakao(geocoder=>{
+    if(!geocoder){ showAddrPopup(lat, lng, '주소 서비스 연결 실패'); return; }
+    geocoder.coord2Address(lng, lat, (result, status)=>{
+      let addr = '주소를 찾을 수 없습니다';
+      if(status === kakao.maps.services.Status.OK && result.length>0){
+        const jibun = result[0].address;
+        const road = result[0].road_address;
+        if(jibun && jibun.address_name) addr = jibun.address_name;
+        else if(road && road.address_name) addr = road.address_name;
+      }
+      showAddrPopup(lat, lng, addr);
+    });
+  });
+}
+
+function showAddrPopup(lat, lng, addr){
+  {
     const rvUrl = `https://map.kakao.com/link/roadview/${lat},${lng}`;
     const kakaoUrl = `https://map.kakao.com/link/map/위치,${lat},${lng}`;
     L.popup({maxWidth:280}).setLatLng([lat,lng])
@@ -899,11 +943,7 @@ function reverseGeocode(lat, lng){
         </div>
       </div>`)
       .openOn(map);
-  }).catch(e=>{
-    L.popup().setLatLng([lat,lng])
-      .setContent(`<span style="color:#64748b">${lat.toFixed(6)}, ${lng.toFixed(6)}</span><br><small style="color:#dc2626">주소 조회 실패</small>`)
-      .openOn(map);
-  });
+  }
 }
 
 // ═══════════════════════════════════════════════════
@@ -942,6 +982,156 @@ function toggleGPS(){
 // ═══════════════════════════════════════════════════
 //  토스트
 // ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+//  드래그 박스 선택 (라쏘)
+// ═══════════════════════════════════════════════════
+let boxSelMode = false;
+let boxStart = null, boxRect = null;
+let selectedPoints = new Set();
+
+function toggleBoxSelect(){
+  boxSelMode = !boxSelMode;
+  const btn = document.getElementById('boxSelBtn');
+  const hint = document.getElementById('boxHint');
+  btn.classList.toggle('on', boxSelMode);
+  hint.style.display = boxSelMode ? 'block' : 'none';
+  if(boxSelMode){
+    map.dragging.disable();
+    map.getContainer().style.cursor = 'crosshair';
+  }else{
+    map.dragging.enable();
+    map.getContainer().style.cursor = '';
+    clearBoxSelection();
+  }
+}
+
+function clearBoxSelection(){
+  selectedPoints.forEach(name=>{
+    const mk = ptMarkers[name];
+    if(mk) mk.setStyle({color:'#fff', weight:2, radius:6});
+  });
+  selectedPoints.clear();
+  document.getElementById('selPanel').style.display = 'none';
+  if(boxRect){ map.removeLayer(boxRect); boxRect=null; }
+}
+
+function initBoxSelect(){
+  const mapEl = map.getContainer();
+
+  map.on('mousedown', e=>{
+    if(!boxSelMode) return;
+    boxStart = e.latlng;
+    if(boxRect) map.removeLayer(boxRect);
+    boxRect = L.rectangle([boxStart, boxStart], {
+      color:'#38bdf8', weight:2, fillColor:'#38bdf8', fillOpacity:.1, dashArray:'5,5'
+    }).addTo(map);
+  });
+
+  map.on('mousemove', e=>{
+    if(!boxSelMode || !boxStart) return;
+    boxRect.setBounds([boxStart, e.latlng]);
+  });
+
+  map.on('mouseup', e=>{
+    if(!boxSelMode || !boxStart) return;
+    const bounds = L.latLngBounds([boxStart, e.latlng]);
+    boxStart = null;
+    // 박스 안의 포인트 선택
+    selectedPoints.clear();
+    Object.keys(POINTS).forEach(name=>{
+      const p = POINTS[name];
+      if(p.la && bounds.contains([p.la, p.ln])){
+        selectedPoints.add(name);
+        const mk = ptMarkers[name];
+        if(mk) mk.setStyle({color:'#38bdf8', weight:4, radius:9});
+      }
+    });
+    showSelPanel();
+    setTimeout(()=>{ if(boxRect){ map.removeLayer(boxRect); boxRect=null; } }, 1500);
+  });
+
+  // 터치 지원 (모바일)
+  let touchStart = null;
+  mapEl.addEventListener('touchstart', ev=>{
+    if(!boxSelMode || ev.touches.length!==1) return;
+    const t = ev.touches[0];
+    touchStart = map.containerPointToLatLng([t.clientX - mapEl.getBoundingClientRect().left, t.clientY - mapEl.getBoundingClientRect().top]);
+    if(boxRect) map.removeLayer(boxRect);
+    boxRect = L.rectangle([touchStart, touchStart], {color:'#38bdf8',weight:2,fillColor:'#38bdf8',fillOpacity:.1,dashArray:'5,5'}).addTo(map);
+    ev.preventDefault();
+  }, {passive:false});
+  mapEl.addEventListener('touchmove', ev=>{
+    if(!boxSelMode || !touchStart || ev.touches.length!==1) return;
+    const t = ev.touches[0];
+    const rect = mapEl.getBoundingClientRect();
+    const ll = map.containerPointToLatLng([t.clientX - rect.left, t.clientY - rect.top]);
+    boxRect.setBounds([touchStart, ll]);
+    ev.preventDefault();
+  }, {passive:false});
+  mapEl.addEventListener('touchend', ev=>{
+    if(!boxSelMode || !touchStart) return;
+    const bounds = boxRect.getBounds();
+    touchStart = null;
+    selectedPoints.clear();
+    Object.keys(POINTS).forEach(name=>{
+      const p = POINTS[name];
+      if(p.la && bounds.contains([p.la, p.ln])){
+        selectedPoints.add(name);
+        const mk = ptMarkers[name];
+        if(mk) mk.setStyle({color:'#38bdf8', weight:4, radius:9});
+      }
+    });
+    showSelPanel();
+    setTimeout(()=>{ if(boxRect){ map.removeLayer(boxRect); boxRect=null; } }, 1500);
+  });
+}
+
+function showSelPanel(){
+  const panel = document.getElementById('selPanel');
+  document.getElementById('selCount').textContent = selectedPoints.size;
+  if(selectedPoints.size === 0){ panel.style.display='none'; return; }
+  // 담당자 버튼
+  const wbtns = document.getElementById('selWorkerBtns');
+  let html = '';
+  for(let w=1; w<=3; w++){
+    html += `<button class="selWbtn" data-w="${w}" style="flex:1;padding:10px 4px;border:2px solid ${WORKER_COLORS[w]};
+      background:#fff;color:${WORKER_COLORS[w]};border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+      ${WORKER_NAMES[w]}</button>`;
+  }
+  wbtns.innerHTML = html;
+  wbtns.querySelectorAll('.selWbtn').forEach(b=>{
+    b.onclick = ()=>{
+      const w = parseInt(b.dataset.w);
+      assignWorkerBatch(w);
+    };
+  });
+  panel.style.display = 'block';
+}
+
+function assignWorkerBatch(w){
+  const updates = {};
+  selectedPoints.forEach(name=>{
+    updates['projects/'+PROJ_ID+'/status/'+name] = {worker:w, done:true, doneAt:Date.now()};
+  });
+  db.ref().update(updates).then(()=>{
+    toast(`${selectedPoints.size}개 포인트 → ${WORKER_NAMES[w]} 배정`);
+    clearBoxSelection();
+    toggleBoxSelect();
+  });
+}
+
+function cancelWorkerBatch(){
+  const updates = {};
+  selectedPoints.forEach(name=>{
+    updates['projects/'+PROJ_ID+'/status/'+name] = {worker:0, done:false, doneAt:null};
+  });
+  db.ref().update(updates).then(()=>{
+    toast(`${selectedPoints.size}개 포인트 완료취소`);
+    clearBoxSelection();
+    toggleBoxSelect();
+  });
+}
+
 function updateLegend(){
   const lg = document.getElementById('legend');
   lg.innerHTML = `
@@ -968,6 +1158,9 @@ function bindEvents(){
   document.getElementById('layerBtn').onclick = toggleLayer;
   document.getElementById('gpsBtn').onclick = toggleGPS;
   document.getElementById('fitBtn').onclick = fitAll;
+  document.getElementById('boxSelBtn').onclick = toggleBoxSelect;
+  document.getElementById('selClose').onclick = ()=>{ clearBoxSelection(); toggleBoxSelect(); };
+  document.getElementById('selCancel').onclick = cancelWorkerBatch;
 
   // 시트 토글
   document.getElementById('sheetHandle').onclick = ()=>{
@@ -1408,7 +1601,7 @@ window.addEventListener('error', function(e){
 });
 
 window.addEventListener('DOMContentLoaded', ()=>{
-  try{ initMap(); }catch(e){ console.error('지도 초기화:', e); }
+  try{ initMap(); initBoxSelect(); }catch(e){ console.error('지도 초기화:', e); }
   try{ bindEvents(); }catch(e){ console.error('이벤트:', e); }
   initFirebase();
 });
