@@ -181,6 +181,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 #splash .sbar{width:200px;height:4px;background:rgba(56,189,248,.2);border-radius:2px;overflow:hidden;margin:18px auto 0}
 #splash .sbar i{display:block;height:100%;background:var(--sky);width:0;animation:sbar 2s linear forwards}
 @keyframes sbar{to{width:100%}}
+@keyframes navPulse{from{transform:scale(1)}to{transform:scale(1.04)}}
 
 /* 매뉴얼 */
 .mn-intro{background:#f0f9ff;border-radius:10px;padding:14px;font-size:13px;
@@ -247,6 +248,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 
   <!-- 우측 도구 -->
   <div id="tools">
+    <button class="tool" id="navBtn" title="측량 네비게이션">🧭</button>
     <button class="tool" id="boxSelBtn" title="범위 선택">▣</button>
     <button class="tool" id="moveBtn" title="점 이동">✥</button>
     <button class="tool" id="layerBtn" title="지도 전환">🗺️</button>
@@ -304,6 +306,48 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
     box-shadow:0 4px 16px rgba(0,0,0,.3)">
     <span style="font-size:13px">이동 <b id="undoCount">0</b>건</span>
     <button id="undoMoveBtn" style="background:#7c3aed;color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer">↩ 되돌리기</button>
+  </div>
+
+  <!-- 네비게이션 상단 안내 패널 -->
+  <div id="navPanel" style="display:none;position:absolute;top:60px;left:8px;right:8px;z-index:750;
+    background:linear-gradient(135deg,#0c1e4a,#0a3060);color:#fff;border-radius:14px;padding:14px 16px;
+    box-shadow:0 6px 28px rgba(0,0,0,.35)">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="flex-shrink:0;width:50px;height:50px;background:#38bdf8;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#0c1e4a"
+        id="navArrow">🧭</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;color:#94a3b8">다음 측량점</div>
+        <div style="font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="navTarget">-</div>
+        <div style="font-size:13px;color:#38bdf8;font-weight:700" id="navDist">거리 계산 중...</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:11px;color:#94a3b8">진행</div>
+        <div style="font-size:16px;font-weight:800" id="navProgress">0/0</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px">
+      <button id="navDone" class="btn" style="flex:2;background:#16a34a;color:#fff;padding:10px">✓ 이 점 완료</button>
+      <button id="navSkip" class="btn" style="flex:1;background:rgba(255,255,255,.15);color:#fff;padding:10px">건너뛰기</button>
+      <button id="navStop" class="btn" style="flex:1;background:rgba(255,255,255,.15);color:#fff;padding:10px">종료</button>
+    </div>
+    <div id="navTestRow" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.2)">
+      <div style="font-size:11px;color:#fbbf24;margin-bottom:6px">🧪 테스트 모드 - 지도를 탭하면 그곳이 내 위치</div>
+      <button id="navTestAuto" class="btn" style="width:100%;background:#fbbf24;color:#0c1e4a;padding:8px;font-size:12px">▶ 목표점으로 자동 이동 (시뮬레이션)</button>
+    </div>
+  </div>
+
+  <!-- 도착 긴급 알림 -->
+  <div id="navAlert" style="display:none;position:fixed;inset:0;z-index:5000;
+    background:rgba(220,38,38,.25);align-items:center;justify-content:center;backdrop-filter:blur(2px)">
+    <div style="background:#fff;border-radius:20px;padding:28px 32px;text-align:center;max-width:320px;
+      box-shadow:0 20px 60px rgba(0,0,0,.4);animation:navPulse .5s ease infinite alternate">
+      <div style="font-size:48px;margin-bottom:8px">📍</div>
+      <div style="font-size:14px;color:#dc2626;font-weight:800;margin-bottom:4px">측량점 도착!</div>
+      <div style="font-size:24px;font-weight:900;color:#0c1e4a;margin-bottom:6px" id="navAlertName">-</div>
+      <div style="font-size:14px;color:#64748b;margin-bottom:18px" id="navAlertDist">5m 이내</div>
+      <button id="navAlertOk" class="btn" style="width:100%;background:#0c1e4a;color:#fff;padding:12px;font-size:15px">확인</button>
+    </div>
   </div>
 
 
@@ -1039,7 +1083,14 @@ function loadProject(pid){
   const ref = db.ref('projects/'+pid);
 
   // 포인트
-  ref.child('points').on('value', s=>{ POINTS = s.val()||{}; renderAll(); });
+  ref.child('points').on('value', s=>{
+    POINTS = s.val()||{};
+    renderAll();
+    // 포인트 사업만 네비 버튼 표시
+    const hasPoints = Object.keys(POINTS).some(n=>POINTS[n].la);
+    const nb = document.getElementById('navBtn');
+    if(nb) nb.style.display = hasPoints ? '' : 'none';
+  });
   // 라인
   ref.child('dxfLines').on('value', s=>{
     const v = s.val();
@@ -1754,6 +1805,265 @@ function renderManual(){
   `;
 }
 
+// ═══════════════════════════════════════════════════
+//  측량 네비게이션
+// ═══════════════════════════════════════════════════
+let navMode = false;
+let navTestMode = false;  // 테스트 모드 (가짜 GPS)
+let navTestPos = null;    // 테스트용 가짜 위치
+let navQueue = [];        // 남은 점 순서 [name, ...]
+let navCurrent = null;    // 현재 목표 점
+let navWatch = null;
+let navAlerted = false;   // 5m 알림 중복 방지
+let navTotal = 0;
+let navMarker = null, navLine = null;
+const NAV_ALERT_DIST = 5;  // 5m
+
+function toggleNav(){
+  if(navMode){ stopNav(); return; }
+  // 포인트 있는지 확인
+  const pts = Object.keys(POINTS).filter(n=>POINTS[n].la);
+  if(pts.length === 0){ toast('포인트가 없는 사업입니다'); return; }
+  navMode = true;
+  document.getElementById('navBtn').classList.add('on');
+  if(boxSelMode) toggleBoxSelect();
+  if(moveMode) toggleMoveMode();
+
+  buildNavQueue();
+  document.getElementById('navPanel').style.display = 'block';
+
+  // 테스트 모드 판별: URL에 ?test 또는 GPS 5초 내 응답 없으면
+  navTestMode = new URLSearchParams(location.search).has('test');
+
+  if(navTestMode){
+    enableNavTest();
+    toast('🧪 테스트 모드 - 지도를 탭해서 이동');
+    return;
+  }
+
+  if(!navigator.geolocation){
+    // GPS 없으면 자동 테스트 모드
+    navTestMode = true; enableNavTest();
+    toast('🧪 GPS 없음 - 테스트 모드');
+    return;
+  }
+
+  // 실제 GPS 시도, 5초 내 실패하면 테스트 모드 제안
+  let gotGPS = false;
+  navWatch = navigator.geolocation.watchPosition(pos=>{
+    gotGPS = true; onNavPosition(pos);
+  }, err=>{
+    if(!gotGPS){
+      navTestMode = true; enableNavTest();
+      toast('🧪 GPS 실패 - 테스트 모드로 전환');
+    }
+  }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
+
+  setTimeout(()=>{
+    if(!gotGPS && !navTestMode){
+      navTestMode = true; enableNavTest();
+      toast('🧪 GPS 응답 없음 - 테스트 모드');
+    }
+  }, 5000);
+
+  toast('측량 네비게이션 시작');
+}
+
+function buildNavQueue(){
+  // 미완료(완료 안 된) 점만
+  navQueue = Object.keys(POINTS).filter(n=>{
+    const p = POINTS[n];
+    if(!p.la) return false;
+    const st = STATUS[n];
+    return !(st && st.done);  // 완료 안 된 것만
+  });
+  navTotal = navQueue.length;
+  navCurrent = null;
+  updateNavProgress();
+}
+
+function onNavPosition(pos){
+  const {latitude:la, longitude:ln} = pos.coords;
+  window._navLa = la; window._navLn = ln;
+
+  // 현재 목표 없으면 가장 가까운 점 선택
+  if(!navCurrent || !navQueue.includes(navCurrent)){
+    navCurrent = findNearest(la, ln);
+    navAlerted = false;
+    if(!navCurrent){ navComplete(); return; }
+    drawNavTarget();
+  }
+
+  // 거리 계산
+  const p = POINTS[navCurrent];
+  const dist = haversine(la, ln, p.la, p.ln);
+
+  // 패널 업데이트
+  document.getElementById('navTarget').textContent = (p.added?'◆ ':'') + navCurrent;
+  document.getElementById('navDist').textContent =
+    dist >= 1000 ? `${(dist/1000).toFixed(2)}km` : `${Math.round(dist)}m`;
+  // 방향 화살표 (북 기준 각도)
+  const brg = bearing(la, ln, p.la, p.ln);
+  document.getElementById('navArrow').style.transform = `rotate(${brg}deg)`;
+  document.getElementById('navArrow').textContent = '↑';
+
+  // 네비 라인 갱신 (내 위치 → 목표)
+  if(navLine){ navLine.setLatLngs([[la,ln],[p.la,p.ln]]); }
+  else { navLine = L.polyline([[la,ln],[p.la,p.ln]], {color:'#38bdf8',weight:3,dashArray:'8,6',opacity:.8}).addTo(map); }
+
+  // 내 위치 마커
+  if(navMarker){ navMarker.setLatLng([la,ln]); }
+  else { navMarker = L.circleMarker([la,ln],{radius:9,fillColor:'#0ea5e9',color:'#fff',weight:3,fillOpacity:1}).addTo(map); }
+
+  // 5m 이내 도착 알림
+  if(dist <= NAV_ALERT_DIST && !navAlerted){
+    navAlerted = true;
+    showNavAlert(navCurrent, dist);
+  }
+}
+
+function enableNavTest(){
+  document.getElementById('navTestRow').style.display = 'block';
+  if(navWatch){ navigator.geolocation.clearWatch(navWatch); navWatch=null; }
+  // 첫 위치: 첫 목표점 근처 (200m 떨어진 곳)
+  buildNavQueue();
+  // 가장 가까운 점 기준으로 시작 위치 잡기
+  const firstPt = navQueue[0] ? POINTS[navQueue[0]] : null;
+  if(firstPt){
+    navTestPos = {la: firstPt.la + 0.002, ln: firstPt.ln + 0.002};  // 약 250m 떨어진 곳
+    onNavPosition({coords:{latitude:navTestPos.la, longitude:navTestPos.ln}});
+    map.setView([navTestPos.la, navTestPos.ln], 16);
+  }
+  // 지도 클릭 = 내 위치 이동
+  map.on('click', navTestClick);
+}
+
+function navTestClick(e){
+  if(!navTestMode || !navMode) return;
+  navTestPos = {la: e.latlng.lat, ln: e.latlng.lng};
+  onNavPosition({coords:{latitude:navTestPos.la, longitude:navTestPos.ln}});
+}
+
+// 목표점으로 자동 이동 시뮬레이션 (10단계로 점점 다가감)
+function navTestAutoMove(){
+  if(!navCurrent || !navTestPos){ toast('목표점이 없습니다'); return; }
+  const target = POINTS[navCurrent];
+  const startLa = navTestPos.la, startLn = navTestPos.ln;
+  const steps = 20;
+  let i = 0;
+  const iv = setInterval(()=>{
+    i++;
+    const t = i/steps;
+    navTestPos = {
+      la: startLa + (target.la - startLa)*t,
+      ln: startLn + (target.ln - startLn)*t
+    };
+    onNavPosition({coords:{latitude:navTestPos.la, longitude:navTestPos.ln}});
+    if(i >= steps){ clearInterval(iv); }
+  }, 200);  // 0.2초마다 = 총 4초
+}
+
+function findNearest(la, ln){
+  let best = null, bestD = Infinity;
+  navQueue.forEach(name=>{
+    const p = POINTS[name];
+    if(!p.la) return;
+    const d = haversine(la, ln, p.la, p.ln);
+    if(d < bestD){ bestD = d; best = name; }
+  });
+  return best;
+}
+
+function bearing(la1, ln1, la2, ln2){
+  const rad = Math.PI/180;
+  const y = Math.sin((ln2-ln1)*rad) * Math.cos(la2*rad);
+  const x = Math.cos(la1*rad)*Math.sin(la2*rad) - Math.sin(la1*rad)*Math.cos(la2*rad)*Math.cos((ln2-ln1)*rad);
+  return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
+}
+
+function drawNavTarget(){
+  const p = POINTS[navCurrent];
+  if(!p) return;
+  map.setView([p.la, p.ln], Math.max(map.getZoom(), 17));
+}
+
+function showNavAlert(name, dist){
+  // 소리 + 진동
+  try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
+  beep();
+  document.getElementById('navAlertName').textContent = (POINTS[name].added?'◆ ':'') + name;
+  document.getElementById('navAlertDist').textContent = `${Math.round(dist)}m 이내 - 측량 지점입니다`;
+  document.getElementById('navAlert').style.display = 'flex';
+}
+
+function beep(){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type='sine'; o.frequency.value=880;
+    g.gain.setValueAtTime(0.3, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime+0.5);
+    o.start(); o.stop(ctx.currentTime+0.5);
+  }catch(e){}
+}
+
+function navDoneCurrent(){
+  if(!navCurrent) return;
+  // 완료 처리 (담당자 없으면 그냥 done만)
+  const st = STATUS[navCurrent] || {};
+  const upd = {done:true, doneAt:Date.now()};
+  if(!st.worker) upd.worker = 1;  // 담당자 없으면 1번으로
+  db.ref('projects/'+PROJ_ID+'/status/'+navCurrent).update(upd);
+  toast(`'${navCurrent}' 완료`);
+  nextNavPoint();
+}
+
+function navSkipCurrent(){
+  if(!navCurrent) return;
+  // 큐 맨 뒤로 (나중에 다시)
+  navQueue = navQueue.filter(n=>n!==navCurrent);
+  navQueue.push(navCurrent);
+  navCurrent = null;
+  navAlerted = false;
+  document.getElementById('navAlert').style.display='none';
+  toast('건너뜀 - 다음 점으로');
+}
+
+function nextNavPoint(){
+  navQueue = navQueue.filter(n=>n!==navCurrent);
+  navCurrent = null;
+  navAlerted = false;
+  document.getElementById('navAlert').style.display='none';
+  updateNavProgress();
+  if(navQueue.length === 0){ navComplete(); }
+}
+
+function updateNavProgress(){
+  const done = navTotal - navQueue.length;
+  document.getElementById('navProgress').textContent = `${done}/${navTotal}`;
+}
+
+function navComplete(){
+  toast('🎉 모든 측량점 완료!');
+  document.getElementById('navTarget').textContent = '완료!';
+  document.getElementById('navDist').textContent = '모든 점을 완료했습니다';
+}
+
+function stopNav(){
+  navMode = false;
+  navTestMode = false;
+  map.off('click', navTestClick);
+  document.getElementById('navTestRow').style.display = 'none';
+  document.getElementById('navBtn').classList.remove('on');
+  document.getElementById('navPanel').style.display = 'none';
+  document.getElementById('navAlert').style.display = 'none';
+  if(navWatch){ navigator.geolocation.clearWatch(navWatch); navWatch=null; }
+  if(navMarker){ map.removeLayer(navMarker); navMarker=null; }
+  if(navLine){ map.removeLayer(navLine); navLine=null; }
+  navCurrent = null; navQueue = [];
+}
+
 function updateLegend(){
   const lg = document.getElementById('legend');
   lg.innerHTML = `
@@ -1782,6 +2092,12 @@ function bindEvents(){
   document.getElementById('fitBtn').onclick = fitAll;
   document.getElementById('boxSelBtn').onclick = toggleBoxSelect;
   document.getElementById('moveBtn').onclick = toggleMoveMode;
+  document.getElementById('navBtn').onclick = toggleNav;
+  document.getElementById('navDone').onclick = navDoneCurrent;
+  document.getElementById('navSkip').onclick = navSkipCurrent;
+  document.getElementById('navStop').onclick = stopNav;
+  document.getElementById('navAlertOk').onclick = ()=>{ document.getElementById('navAlert').style.display='none'; };
+  document.getElementById('navTestAuto').onclick = navTestAutoMove;
   document.getElementById('moveGpsBtn').onclick = moveToGPS;
   document.getElementById('moveCancelBtn').onclick = cancelDrag;
   document.getElementById('undoMoveBtn').onclick = undoMove;
