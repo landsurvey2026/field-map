@@ -1924,6 +1924,16 @@ function onNavPosition(pos){
 
 function enableNavTest(){
   document.getElementById('navTestRow').style.display = 'block';
+  // 테스트 배너 표시
+  let banner = document.getElementById('navTestBanner');
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'navTestBanner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:6000;background:#fbbf24;color:#0c1e4a;text-align:center;padding:4px;font-size:12px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    banner.textContent = '🧪 테스트 모드 - 실제 데이터는 저장되지 않습니다';
+    document.body.appendChild(banner);
+  }
+  banner.style.display = 'block';
   if(navWatch){ navigator.geolocation.clearWatch(navWatch); navWatch=null; }
   // 첫 위치: 첫 목표점 근처 (200m 떨어진 곳)
   buildNavQueue();
@@ -2010,10 +2020,16 @@ function beep(){
 
 function navDoneCurrent(){
   if(!navCurrent) return;
-  // 완료 처리 (담당자 없으면 그냥 done만)
+  if(navTestMode){
+    // ★ 테스트 모드: Firebase 저장 안 함 (실제 데이터 보호)
+    toast(`🧪 [테스트] '${navCurrent}' 완료 (저장 안 됨)`);
+    nextNavPoint();
+    return;
+  }
+  // 실제 모드: 완료 처리
   const st = STATUS[navCurrent] || {};
   const upd = {done:true, doneAt:Date.now()};
-  if(!st.worker) upd.worker = 1;  // 담당자 없으면 1번으로
+  if(!st.worker) upd.worker = 1;
   db.ref('projects/'+PROJ_ID+'/status/'+navCurrent).update(upd);
   toast(`'${navCurrent}' 완료`);
   nextNavPoint();
@@ -2053,6 +2069,8 @@ function navComplete(){
 function stopNav(){
   navMode = false;
   navTestMode = false;
+  const banner = document.getElementById('navTestBanner');
+  if(banner) banner.style.display = 'none';
   map.off('click', navTestClick);
   document.getElementById('navTestRow').style.display = 'none';
   document.getElementById('navBtn').classList.remove('on');
