@@ -877,7 +877,7 @@ function onPointClick(name){
           setPointStatus(name, {worker:0, done:false, doneAt:null});
         }else{
           // 다른 담당자로 배치 (완료상태는 유지하지 않고 배치만)
-          setPointStatus(name, {worker:w, done:false});
+          setPointStatus(name, {worker:w, done:false, assignedAt:Date.now()});
         }
         map.closePopup();
       };
@@ -1505,7 +1505,7 @@ function assignWorkerBatch(w){
   const updates = {};
   selectedPoints.forEach(name=>{
     // 박스 선택은 "배치"만 (완료 아님)
-    updates['projects/'+PROJ_ID+'/status/'+name] = {worker:w, done:false};
+    updates['projects/'+PROJ_ID+'/status/'+name] = {worker:w, done:false, assignedAt:Date.now()};
   });
   db.ref().update(updates).then(()=>{
     toast(`${selectedPoints.size}개 → ${WORKER_NAMES[w]} 배치`);
@@ -1628,6 +1628,7 @@ function renderDashboard(){
       ${[1,2,3].map(w=>{
         const assigned = s.assignedByWorker[w];
         const done = s.doneByWorker[w];
+        const waiting = assigned - done;  // 배치만 하고 미완료
         const pct = assigned ? Math.round(done/assigned*100) : 0;
         return `<div style="padding:10px;background:#f8fafc;border-radius:10px;margin-bottom:6px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:nowrap">
@@ -1635,13 +1636,57 @@ function renderDashboard(){
             <span style="font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${WORKER_NAMES[w]}</span>
             <span style="font-size:12px;color:#64748b;white-space:nowrap;flex-shrink:0">배치<b style="color:${WORKER_COLORS[w]}">${assigned}</b> 완료<b style="color:#16a34a">${done}</b>${s.addedByWorker[w]>0?`<span style="color:#b45309">◆${s.addedByWorker[w]}</span>`:''}</span>
           </div>
-          <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+          <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin-bottom:8px">
             <div style="height:100%;width:${pct}%;background:${WORKER_COLORS[w]}"></div>
           </div>
+          ${waiting>0?`<button class="batchDoneBtn" data-w="${w}" style="width:100%;padding:8px;border:none;border-radius:8px;
+            background:#16a34a;color:#fff;font-size:12px;font-weight:700;cursor:pointer">✓ 배치만 한 ${waiting}개 일괄 완료</button>`
+          :`<div style="text-align:center;font-size:11px;color:#94a3b8">대기 중인 배치 없음</div>`}
         </div>`;
       }).join('')}
     </div>
+
+    <!-- 전체 일괄 완료 -->
+    ${s.assigned>0?`<button id="batchDoneAll" style="width:100%;padding:12px;border:none;border-radius:10px;
+      background:#0c1e4a;color:#fff;font-size:14px;font-weight:800;cursor:pointer;margin-top:6px">
+      ✓ 배치만 한 전체 ${s.assigned}개 일괄 완료</button>`:''}
   `;
+
+  // 일괄완료 버튼 이벤트
+  setTimeout(()=>{
+    document.querySelectorAll('.batchDoneBtn').forEach(b=>{
+      b.onclick = ()=> batchComplete(parseInt(b.dataset.w));
+    });
+    const allBtn = document.getElementById('batchDoneAll');
+    if(allBtn) allBtn.onclick = ()=> batchComplete(0);  // 0=전체
+  }, 50);
+}
+
+// 배치만 한 점들 일괄 완료
+function batchComplete(worker){
+  // worker=0이면 전체, 아니면 해당 담당자만
+  const targets = [];
+  Object.keys(POINTS).forEach(name=>{
+    const st = STATUS[name];
+    if(st && st.worker && !st.done){  // 배치됨 + 미완료
+      if(worker===0 || st.worker===worker) targets.push(name);
+    }
+  });
+  if(targets.length === 0){ toast('완료할 배치가 없습니다'); return; }
+
+  const who = worker===0 ? '전체' : WORKER_NAMES[worker];
+  if(!confirm(`${who} 배치 ${targets.length}개를 모두 완료 처리할까요?`)) return;
+
+  const now = Date.now();
+  const updates = {};
+  targets.forEach(name=>{
+    updates['projects/'+PROJ_ID+'/status/'+name+'/done'] = true;
+    updates['projects/'+PROJ_ID+'/status/'+name+'/doneAt'] = now;
+  });
+  db.ref().update(updates).then(()=>{
+    toast(`${targets.length}개 일괄 완료`);
+    renderDashboard();  // 현황표 갱신
+  });
 }
 
 function renderPerformance(){
@@ -1696,7 +1741,77 @@ function renderPerformance(){
         <div style="font-size:24px;font-weight:900;color:#2563eb">${s.assigned}<span style="font-size:13px"> 개</span></div>
       </div>
     </div>
+
+    <!-- 날짜별 통계 -->
+    <div style="margin-top:18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:800;color:#0c1e4a">📅 날짜별 통계</div>
+        <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px">
+          <button class="dateBasis ${_dateBasis==='done'?'on':''}" data-basis="done"
+            style="padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
+            background:${_dateBasis==='done'?'#0c1e4a':'transparent'};color:${_dateBasis==='done'?'#fff':'#64748b'}">완료한 날</button>
+          <button class="dateBasis ${_dateBasis==='assigned'?'on':''}" data-basis="assigned"
+            style="padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
+            background:${_dateBasis==='assigned'?'#0c1e4a':'transparent'};color:${_dateBasis==='assigned'?'#fff':'#64748b'}">배치한 날</button>
+        </div>
+      </div>
+      <div id="dateStatsBody">${renderDateStats()}</div>
+    </div>
   `;
+
+  setTimeout(()=>{
+    document.querySelectorAll('.dateBasis').forEach(b=>{
+      b.onclick = ()=>{ _dateBasis = b.dataset.basis; renderPerformance(); };
+    });
+  }, 50);
+}
+
+let _dateBasis = 'done';  // 'done'=완료한 날, 'assigned'=배치한 날
+
+function renderDateStats(){
+  const field = _dateBasis === 'done' ? 'doneAt' : 'assignedAt';
+  // 날짜별 집계 {날짜: {total, w1,w2,w3}}
+  const byDate = {};
+  Object.keys(POINTS).forEach(name=>{
+    const st = STATUS[name];
+    if(!st || !st.worker) return;
+    // 완료기준이면 완료된 것만, 배치기준이면 배치된 것 전부
+    if(_dateBasis==='done' && !st.done) return;
+    const ts = st[field];
+    if(!ts) return;
+    const d = new Date(ts);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    if(!byDate[key]) byDate[key] = {total:0, w:{1:0,2:0,3:0}};
+    byDate[key].total++;
+    byDate[key].w[st.worker] = (byDate[key].w[st.worker]||0)+1;
+  });
+
+  const dates = Object.keys(byDate).sort().reverse();  // 최신순
+  if(dates.length === 0){
+    return '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:13px">기록된 날짜가 없습니다</div>';
+  }
+
+  const dayNames = ['일','월','화','수','목','금','토'];
+  const maxTotal = Math.max(...dates.map(k=>byDate[k].total), 1);
+
+  return dates.map(key=>{
+    const day = byDate[key];
+    const d = new Date(key);
+    const dn = dayNames[d.getDay()];
+    const barPct = Math.round(day.total/maxTotal*100);
+    const wParts = [1,2,3].filter(w=>day.w[w]>0)
+      .map(w=>`<span style="color:${WORKER_COLORS[w]}">${WORKER_NAMES[w]} ${day.w[w]}</span>`).join(' · ');
+    return `<div style="padding:10px;background:#f8fafc;border-radius:10px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <span style="font-weight:700;font-size:13px">${key.slice(5)} (${dn})</span>
+        <span style="font-size:15px;font-weight:800;color:#0c1e4a">${day.total}개</span>
+      </div>
+      <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin-bottom:5px">
+        <div style="height:100%;width:${barPct}%;background:#0ea5e9"></div>
+      </div>
+      <div style="font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wParts||'-'}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderManual(){
