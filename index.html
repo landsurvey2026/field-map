@@ -249,6 +249,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   <!-- 우측 도구 -->
   <div id="tools">
     <button class="tool" id="navBtn" title="측량 네비게이션">🧭</button>
+    <button class="tool" id="routeBtn" title="자동 경로 안내">🛣️</button>
     <button class="tool" id="boxSelBtn" title="범위 선택">▣</button>
     <button class="tool" id="moveBtn" title="점 이동">✥</button>
     <button class="tool" id="layerBtn" title="지도 전환">🗺️</button>
@@ -315,25 +316,18 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
     <button id="navModeAuto" class="btn btn-pri btn-full" style="margin-bottom:8px;padding:12px">
       📍 가까운 점부터 자동 안내</button>
     <button id="navModeRoute" class="btn btn-full" style="background:#7c3aed;color:#fff;padding:12px;margin-bottom:8px">
-      ✏️ 경로 그려서 안내 (도로 따라)</button>
+      🛣️ 출발점 찍으면 자동 경로</button>
     <button id="navStartCancel" class="btn btn-sec btn-full">취소</button>
   </div>
 
-  <!-- 경로 그리기 패널 -->
+  <!-- 자동 경로 패널 -->
   <div id="routeDrawPanel" style="display:none;position:absolute;top:60px;left:8px;right:8px;z-index:750;
     background:linear-gradient(135deg,#5b21b6,#7c3aed);color:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 6px 28px rgba(0,0,0,.3)">
-    <div style="font-size:14px;font-weight:800;margin-bottom:4px">✏️ 측량 경로 그리기</div>
-    <div style="font-size:12px;color:#ddd6fe;margin-bottom:10px" id="routeStep">1단계: 출발점을 탭하세요</div>
-    <div style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-        <span>경로 범위</span><span id="routeRangeVal">30m</span>
-      </div>
-      <input type="range" id="routeRange" min="10" max="100" value="30" step="5" style="width:100%">
-    </div>
+    <div style="font-size:14px;font-weight:800;margin-bottom:4px">🛣️ 자동 경로 안내</div>
+    <div style="font-size:13px;color:#ddd6fe;margin-bottom:10px" id="routeStep">출발점을 탭하세요</div>
     <div style="display:flex;gap:6px">
-      <button id="routeFinish" class="btn" style="flex:2;background:#16a34a;color:#fff;padding:10px">✓ 경로 완성 → 안내 시작</button>
-      <button id="routeClear" class="btn" style="flex:1;background:rgba(255,255,255,.2);color:#fff;padding:10px">초기화</button>
-      <button id="routeCancel" class="btn" style="flex:1;background:rgba(255,255,255,.2);color:#fff;padding:10px">취소</button>
+      <button id="routeFinish" class="btn" style="flex:2;background:#16a34a;color:#fff;padding:11px">✓ 이 경로로 안내 시작</button>
+      <button id="routeCancel" class="btn" style="flex:1;background:rgba(255,255,255,.2);color:#fff;padding:11px">취소</button>
     </div>
     <div style="font-size:12px;color:#ddd6fe;margin-top:8px" id="routeInfo"></div>
   </div>
@@ -1122,6 +1116,8 @@ function loadProject(pid){
     const hasPoints = Object.keys(POINTS).some(n=>POINTS[n].la);
     const nb = document.getElementById('navBtn');
     if(nb) nb.style.display = hasPoints ? '' : 'none';
+    const rb = document.getElementById('routeBtn');
+    if(rb) rb.style.display = hasPoints ? '' : 'none';
   });
   // 라인
   ref.child('dxfLines').on('value', s=>{
@@ -1882,12 +1878,83 @@ function startRouteMode(){
   document.getElementById('routeDrawPanel').style.display = 'block';
   routeDrawing = true;
   routeStart = null;
-  routePath = [];
-  routeRange = parseInt(document.getElementById('routeRange').value);
-  document.getElementById('routeStep').textContent = '1단계: 출발점을 탭하세요';
+  navRouteOrder = null;
+  document.getElementById('routeStep').textContent = '출발점을 탭하세요 (자동으로 경로를 찾습니다)';
   document.getElementById('routeInfo').textContent = '';
-  map.dragging.disable();
-  enableRouteDraw();
+  // 출발점 선택용 클릭 핸들러
+  map.on('click', routePickStart);
+}
+
+// 출발점 탭 → 자동 경로 생성
+function routePickStart(e){
+  if(!routeDrawing) return;
+  const near = nearestPointTo(e.latlng.lat, e.latlng.lng, 200);
+  if(!near){ toast('점 근처를 탭하세요'); return; }
+  routeStart = near;
+  // 자동 경로 생성 (방향 유지 꼬리물기)
+  navRouteOrder = buildAutoRoute(near);
+  drawRoutePreview();
+  document.getElementById('routeStep').textContent = `출발: ${near} → ${navRouteOrder.length}개 점 연결됨`;
+  document.getElementById('routeInfo').textContent = '맘에 들면 [안내 시작], 아니면 다른 점 탭';
+}
+
+// ★ 방향 유지 꼬리물기 알고리즘
+function buildAutoRoute(startName){
+  const remaining = new Set(Object.keys(POINTS).filter(n=>{
+    const p = POINTS[n];
+    if(!p.la) return false;
+    const st = STATUS[n];
+    return !(st && st.done);  // 미완료만
+  }));
+  if(!remaining.has(startName)) remaining.add(startName);
+
+  const order = [startName];
+  remaining.delete(startName);
+  let prevBearing = null;
+
+  let cur = startName;
+  while(remaining.size > 0){
+    const cp = POINTS[cur];
+    let best = null, bestScore = Infinity;
+
+    remaining.forEach(name=>{
+      const p = POINTS[name];
+      const d = haversine(cp.la, cp.ln, p.la, p.ln);
+      // 너무 먼 점(다른 구역)은 큰 패널티 - 200m 넘으면 가중
+      let score = d;
+      if(prevBearing !== null){
+        const b = bearing(cp.la, cp.ln, p.la, p.ln);
+        let diff = Math.abs(b - prevBearing);
+        if(diff > 180) diff = 360 - diff;
+        // 방향 차이가 클수록 패널티 (90도=거리만큼, 180도=2배)
+        score = d * (1 + diff/90);
+      }
+      if(score < bestScore){ bestScore = score; best = name; }
+    });
+
+    if(!best) break;
+    prevBearing = bearing(POINTS[cur].la, POINTS[cur].ln, POINTS[best].la, POINTS[best].ln);
+    order.push(best);
+    remaining.delete(best);
+    cur = best;
+  }
+  return order;
+}
+
+// 경로 미리보기 (순서대로 선 + 번호)
+function drawRoutePreview(){
+  clearRouteVisuals(false);
+  if(!navRouteOrder || navRouteOrder.length < 1) return;
+  const pts = navRouteOrder.map(n=>[POINTS[n].la, POINTS[n].ln]);
+  // 경로 선
+  routePoly = L.polyline(pts, {color:'#fbbf24', weight:4, opacity:.9, dashArray:'6,4'}).addTo(map);
+  // 출발점 강조
+  const sp = POINTS[navRouteOrder[0]];
+  routeStartMarker = L.circleMarker([sp.la, sp.ln],
+    {radius:12, fillColor:'#16a34a', color:'#fff', weight:3, fillOpacity:1}).addTo(map);
+  routeStartMarker.bindTooltip('출발 ①', {permanent:true, direction:'top'}).openTooltip();
+  // 전체 경로가 보이게
+  map.fitBounds(pts, {padding:[60,60]});
 }
 
 let _routeDrawHandlers = null;
@@ -2006,16 +2073,13 @@ function nearestPointTo(la, ln, maxM){
 }
 
 function finishRoute(){
-  const found = collectRoutePoints();
-  if(found.length === 0){ toast('경로 주변에 점이 없습니다'); return; }
-  navRouteOrder = found;
+  if(!navRouteOrder || navRouteOrder.length === 0){ toast('출발점을 먼저 탭하세요'); return; }
   routeDrawing = false;
-  disableRouteDraw();
-  map.dragging.enable();
+  map.off('click', routePickStart);
   document.getElementById('routeDrawPanel').style.display = 'none';
-  clearRouteVisuals(true);
+  clearRouteVisuals(true);  // 경로선 유지
   beginNav();
-  toast(`경로 ${found.length}개 점 - 안내 시작`);
+  toast(`경로 ${navRouteOrder.length}개 점 - 안내 시작`);
 }
 
 function clearRouteVisuals(keepPath){
@@ -2029,11 +2093,11 @@ function clearRouteVisuals(keepPath){
 
 function cancelRoute(){
   routeDrawing = false;
-  disableRouteDraw();
-  map.dragging.enable();
+  map.off('click', routePickStart);
   clearRouteVisuals(false);
-  routeStart = null; routePath = [];
+  routeStart = null; navRouteOrder = null;
   document.getElementById('routeDrawPanel').style.display = 'none';
+  const rb=document.getElementById('routeBtn'); if(rb) rb.classList.remove('on');
   stopNav();
 }
 
@@ -2297,8 +2361,9 @@ function stopNav(){
   if(navLine){ map.removeLayer(navLine); navLine=null; }
   navCurrent = null; navQueue = [];
   navRouteOrder = null;
-  if(routeDrawing){ routeDrawing=false; disableRouteDraw(); map.dragging.enable(); }
+  if(routeDrawing){ routeDrawing=false; map.off('click', routePickStart); }
   clearRouteVisuals(false);
+  const rb=document.getElementById('routeBtn'); if(rb){ rb.classList.remove('on'); }
   document.getElementById('navStartPanel').style.display = 'none';
   document.getElementById('routeDrawPanel').style.display = 'none';
 }
@@ -2337,6 +2402,16 @@ function bindEvents(){
   document.getElementById('navStop').onclick = stopNav;
   document.getElementById('navAlertOk').onclick = ()=>{ document.getElementById('navAlert').style.display='none'; };
   document.getElementById('navTestAuto').onclick = navTestAutoMove;
+  // 경로 그리기 독립 버튼
+  document.getElementById('routeBtn').onclick = ()=>{
+    if(navMode || routeDrawing){ stopNav(); return; }
+    const pts = Object.keys(POINTS).filter(n=>POINTS[n].la);
+    if(pts.length === 0){ toast('포인트가 없는 사업입니다'); return; }
+    if(boxSelMode) toggleBoxSelect();
+    if(moveMode) toggleMoveMode();
+    document.getElementById('routeBtn').classList.add('on');
+    startRouteMode();
+  };
   // 네비 시작 선택
   document.getElementById('navModeAuto').onclick = startNavAuto;
   document.getElementById('navModeRoute').onclick = startRouteMode;
@@ -2346,17 +2421,7 @@ function bindEvents(){
   };
   // 경로 그리기
   document.getElementById('routeFinish').onclick = finishRoute;
-  document.getElementById('routeClear').onclick = ()=>{
-    routeStart=null; routePath=[]; clearRouteVisuals(false);
-    document.getElementById('routeStep').textContent='1단계: 출발점을 탭하세요';
-    document.getElementById('routeInfo').textContent='';
-  };
   document.getElementById('routeCancel').onclick = cancelRoute;
-  document.getElementById('routeRange').oninput = e=>{
-    routeRange = parseInt(e.target.value);
-    document.getElementById('routeRangeVal').textContent = routeRange+'m';
-    if(routePath.length>=2) updateRoutePreview();
-  };
   document.getElementById('moveGpsBtn').onclick = moveToGPS;
   document.getElementById('moveCancelBtn').onclick = cancelDrag;
   document.getElementById('undoMoveBtn').onclick = undoMove;
@@ -2859,6 +2924,8 @@ window.addEventListener('DOMContentLoaded', ()=>{
     setTimeout(()=>{
       const nb = document.getElementById('navBtn');
       if(nb){ nb.style.background='#fbbf24'; nb.style.color='#0c1e4a'; nb.title='테스트 네비'; }
+      const rb = document.getElementById('routeBtn');
+      if(rb){ rb.style.background='#fbbf24'; rb.style.color='#0c1e4a'; }
     }, 500);
   }
   try{ initMap(); initBoxSelect(); }catch(e){ console.error('지도 초기화:', e); }
