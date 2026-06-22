@@ -308,6 +308,36 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
     <button id="undoMoveBtn" style="background:#7c3aed;color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer">↩ 되돌리기</button>
   </div>
 
+  <!-- 네비 시작 선택 -->
+  <div id="navStartPanel" style="display:none;position:absolute;top:60px;left:8px;right:8px;z-index:750;
+    background:#fff;border-radius:14px;padding:16px;box-shadow:0 6px 28px rgba(0,0,0,.25)">
+    <div style="font-size:15px;font-weight:800;color:#0c1e4a;margin-bottom:12px">🧭 측량 네비게이션 시작</div>
+    <button id="navModeAuto" class="btn btn-pri btn-full" style="margin-bottom:8px;padding:12px">
+      📍 가까운 점부터 자동 안내</button>
+    <button id="navModeRoute" class="btn btn-full" style="background:#7c3aed;color:#fff;padding:12px;margin-bottom:8px">
+      ✏️ 경로 그려서 안내 (도로 따라)</button>
+    <button id="navStartCancel" class="btn btn-sec btn-full">취소</button>
+  </div>
+
+  <!-- 경로 그리기 패널 -->
+  <div id="routeDrawPanel" style="display:none;position:absolute;top:60px;left:8px;right:8px;z-index:750;
+    background:linear-gradient(135deg,#5b21b6,#7c3aed);color:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 6px 28px rgba(0,0,0,.3)">
+    <div style="font-size:14px;font-weight:800;margin-bottom:4px">✏️ 측량 경로 그리기</div>
+    <div style="font-size:12px;color:#ddd6fe;margin-bottom:10px" id="routeStep">1단계: 출발점을 탭하세요</div>
+    <div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span>경로 범위</span><span id="routeRangeVal">30m</span>
+      </div>
+      <input type="range" id="routeRange" min="10" max="100" value="30" step="5" style="width:100%">
+    </div>
+    <div style="display:flex;gap:6px">
+      <button id="routeFinish" class="btn" style="flex:2;background:#16a34a;color:#fff;padding:10px">✓ 경로 완성 → 안내 시작</button>
+      <button id="routeClear" class="btn" style="flex:1;background:rgba(255,255,255,.2);color:#fff;padding:10px">초기화</button>
+      <button id="routeCancel" class="btn" style="flex:1;background:rgba(255,255,255,.2);color:#fff;padding:10px">취소</button>
+    </div>
+    <div style="font-size:12px;color:#ddd6fe;margin-top:8px" id="routeInfo"></div>
+  </div>
+
   <!-- 네비게이션 상단 안내 패널 -->
   <div id="navPanel" style="display:none;position:absolute;top:60px;left:8px;right:8px;z-index:750;
     background:linear-gradient(135deg,#0c1e4a,#0a3060);color:#fff;border-radius:14px;padding:14px 16px;
@@ -500,6 +530,8 @@ const WORKER_COLORS = {1:'#3b82f6', 2:'#f97316', 3:'#a855f7'};
 // URL 파라미터로 사업 ID 받기 (?p=xxx)
 const urlParams = new URLSearchParams(location.search);
 let PROJ_ID = urlParams.get('p') || localStorage.getItem('lastProj') || '';
+// 테스트 모드: ?test 또는 &test 또는 ?test=1 모두 인식
+const IS_TEST = urlParams.has('test') || location.search.includes('test') || location.hash.includes('test');
 
 // ═══════════════════════════════════════════════════
 //  상태
@@ -1817,38 +1849,210 @@ let navWatch = null;
 let navAlerted = false;   // 5m 알림 중복 방지
 let navTotal = 0;
 let navMarker = null, navLine = null;
+let navRouteOrder = null;   // 경로 순서 [name, ...]
+// 경로 그리기 상태
+let routeDrawing = false;
+let routeStart = null;      // 출발점 name
+let routePath = [];         // 그린 경로 좌표 [[la,ln],...]
+let routeRange = 30;        // 범위 (m)
+let routePoly = null, routeStartMarker = null, routeHighlight = [];
 const NAV_ALERT_DIST = 5;  // 5m
 
 function toggleNav(){
   if(navMode){ stopNav(); return; }
-  // 포인트 있는지 확인
   const pts = Object.keys(POINTS).filter(n=>POINTS[n].la);
   if(pts.length === 0){ toast('포인트가 없는 사업입니다'); return; }
-  navMode = true;
-  document.getElementById('navBtn').classList.add('on');
   if(boxSelMode) toggleBoxSelect();
   if(moveMode) toggleMoveMode();
+  // 시작 방식 선택 패널 표시
+  document.getElementById('navStartPanel').style.display = 'block';
+  document.getElementById('navBtn').classList.add('on');
+}
 
+// 자동 모드 (가까운 순)
+function startNavAuto(){
+  document.getElementById('navStartPanel').style.display = 'none';
+  navRouteOrder = null;
+  beginNav();
+}
+
+// ─── 경로 그리기 모드 ───
+function startRouteMode(){
+  document.getElementById('navStartPanel').style.display = 'none';
+  document.getElementById('routeDrawPanel').style.display = 'block';
+  routeDrawing = true;
+  routeStart = null;
+  routePath = [];
+  routeRange = parseInt(document.getElementById('routeRange').value);
+  document.getElementById('routeStep').textContent = '1단계: 출발점을 탭하세요';
+  document.getElementById('routeInfo').textContent = '';
+  map.dragging.disable();
+  enableRouteDraw();
+}
+
+let _routeDrawHandlers = null;
+function enableRouteDraw(){
+  const mapEl = map.getContainer();
+  let drawing = false;
+  function ptToLL(ev){
+    const t = ev.touches ? ev.touches[0] : ev;
+    const rect = mapEl.getBoundingClientRect();
+    return map.containerPointToLatLng([t.clientX - rect.left, t.clientY - rect.top]);
+  }
+  function onStart(ev){
+    if(!routeDrawing) return;
+    if(!routeStart){
+      const ll = ptToLL(ev);
+      const near = nearestPointTo(ll.lat, ll.lng, 100);
+      if(near){
+        routeStart = near;
+        routePath = [[POINTS[near].la, POINTS[near].ln]];
+        if(routeStartMarker) map.removeLayer(routeStartMarker);
+        routeStartMarker = L.circleMarker([POINTS[near].la, POINTS[near].ln],
+          {radius:11, fillColor:'#16a34a', color:'#fff', weight:3, fillOpacity:1}).addTo(map);
+        routeStartMarker.bindTooltip('출발: '+near, {permanent:true, direction:'top'}).openTooltip();
+        document.getElementById('routeStep').textContent = '2단계: 도로를 따라 경로를 그리세요';
+        toast('출발점: '+near);
+      }else{ toast('점 근처를 탭하세요'); }
+      ev.preventDefault();
+      return;
+    }
+    drawing = true;
+    ev.preventDefault();
+  }
+  function onMove(ev){
+    if(!routeDrawing || !drawing || !routeStart) return;
+    const ll = ptToLL(ev);
+    routePath.push([ll.lat, ll.lng]);
+    if(routePoly) routePoly.setLatLngs(routePath);
+    else routePoly = L.polyline(routePath, {color:'#fbbf24', weight:4, opacity:.9}).addTo(map);
+    ev.preventDefault();
+  }
+  function onEnd(ev){
+    if(!routeDrawing) return;
+    drawing = false;
+    updateRoutePreview();
+  }
+  _routeDrawHandlers = {onStart, onMove, onEnd, mapEl};
+  mapEl.addEventListener('mousedown', onStart);
+  mapEl.addEventListener('mousemove', onMove);
+  mapEl.addEventListener('mouseup', onEnd);
+  mapEl.addEventListener('touchstart', onStart, {passive:false});
+  mapEl.addEventListener('touchmove', onMove, {passive:false});
+  mapEl.addEventListener('touchend', onEnd, {passive:false});
+}
+
+function disableRouteDraw(){
+  if(!_routeDrawHandlers) return;
+  const {onStart, onMove, onEnd, mapEl} = _routeDrawHandlers;
+  mapEl.removeEventListener('mousedown', onStart);
+  mapEl.removeEventListener('mousemove', onMove);
+  mapEl.removeEventListener('mouseup', onEnd);
+  mapEl.removeEventListener('touchstart', onStart);
+  mapEl.removeEventListener('touchmove', onMove);
+  mapEl.removeEventListener('touchend', onEnd);
+  _routeDrawHandlers = null;
+}
+
+function updateRoutePreview(){
+  routeHighlight.forEach(m=>map.removeLayer(m));
+  routeHighlight = [];
+  const found = collectRoutePoints();
+  found.forEach(name=>{
+    const p = POINTS[name];
+    const m = L.circleMarker([p.la, p.ln], {radius:9, fillColor:'transparent', color:'#fbbf24', weight:3}).addTo(map);
+    routeHighlight.push(m);
+  });
+  document.getElementById('routeInfo').textContent = `경로 주변 ${found.length}개 점 선택됨`;
+}
+
+function collectRoutePoints(){
+  if(routePath.length < 2) return [];
+  const result = [];
+  Object.keys(POINTS).forEach(name=>{
+    const p = POINTS[name];
+    if(!p.la) return;
+    let minD = Infinity, bestT = 0;
+    for(let i=0; i<routePath.length-1; i++){
+      const d = distToSegment(p.la, p.ln, routePath[i], routePath[i+1]);
+      if(d.dist < minD){ minD = d.dist; bestT = i + d.t; }
+    }
+    if(minD <= routeRange){ result.push({name, order: bestT}); }
+  });
+  result.sort((a,b)=> a.order - b.order);
+  return result.map(r=>r.name);
+}
+
+function distToSegment(plat, plng, a, b){
+  const latM = 111000, lngM = 111000*Math.cos(plat*Math.PI/180);
+  const px=(plng-a[1])*lngM, py=(plat-a[0])*latM;
+  const bx=(b[1]-a[1])*lngM, by=(b[0]-a[0])*latM;
+  const len2 = bx*bx+by*by;
+  let t = len2>0 ? (px*bx+py*by)/len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const dx = px - bx*t, dy = py - by*t;
+  return {dist: Math.sqrt(dx*dx+dy*dy), t};
+}
+
+function nearestPointTo(la, ln, maxM){
+  let best=null, bestD=maxM;
+  Object.keys(POINTS).forEach(name=>{
+    const p = POINTS[name];
+    if(!p.la) return;
+    const d = haversine(la, ln, p.la, p.ln);
+    if(d < bestD){ bestD = d; best = name; }
+  });
+  return best;
+}
+
+function finishRoute(){
+  const found = collectRoutePoints();
+  if(found.length === 0){ toast('경로 주변에 점이 없습니다'); return; }
+  navRouteOrder = found;
+  routeDrawing = false;
+  disableRouteDraw();
+  map.dragging.enable();
+  document.getElementById('routeDrawPanel').style.display = 'none';
+  clearRouteVisuals(true);
+  beginNav();
+  toast(`경로 ${found.length}개 점 - 안내 시작`);
+}
+
+function clearRouteVisuals(keepPath){
+  routeHighlight.forEach(m=>map.removeLayer(m));
+  routeHighlight = [];
+  if(!keepPath){
+    if(routePoly){ map.removeLayer(routePoly); routePoly=null; }
+    if(routeStartMarker){ map.removeLayer(routeStartMarker); routeStartMarker=null; }
+  }
+}
+
+function cancelRoute(){
+  routeDrawing = false;
+  disableRouteDraw();
+  map.dragging.enable();
+  clearRouteVisuals(false);
+  routeStart = null; routePath = [];
+  document.getElementById('routeDrawPanel').style.display = 'none';
+  stopNav();
+}
+
+function beginNav(){
+  navMode = true;
   buildNavQueue();
   document.getElementById('navPanel').style.display = 'block';
 
-  // 테스트 모드 판별: URL에 ?test 또는 GPS 5초 내 응답 없으면
-  navTestMode = new URLSearchParams(location.search).has('test');
-
+  navTestMode = IS_TEST;
   if(navTestMode){
     enableNavTest();
     toast('🧪 테스트 모드 - 지도를 탭해서 이동');
     return;
   }
-
   if(!navigator.geolocation){
-    // GPS 없으면 자동 테스트 모드
     navTestMode = true; enableNavTest();
     toast('🧪 GPS 없음 - 테스트 모드');
     return;
   }
-
-  // 실제 GPS 시도, 5초 내 실패하면 테스트 모드 제안
   let gotGPS = false;
   navWatch = navigator.geolocation.watchPosition(pos=>{
     gotGPS = true; onNavPosition(pos);
@@ -1870,13 +2074,21 @@ function toggleNav(){
 }
 
 function buildNavQueue(){
-  // 미완료(완료 안 된) 점만
-  navQueue = Object.keys(POINTS).filter(n=>{
-    const p = POINTS[n];
-    if(!p.la) return false;
-    const st = STATUS[n];
-    return !(st && st.done);  // 완료 안 된 것만
-  });
+  if(navRouteOrder && navRouteOrder.length){
+    // 경로 순서대로 (완료 안 된 것만)
+    navQueue = navRouteOrder.filter(n=>{
+      const st = STATUS[n];
+      return POINTS[n] && POINTS[n].la && !(st && st.done);
+    });
+  }else{
+    // 미완료 점 전부
+    navQueue = Object.keys(POINTS).filter(n=>{
+      const p = POINTS[n];
+      if(!p.la) return false;
+      const st = STATUS[n];
+      return !(st && st.done);
+    });
+  }
   navTotal = navQueue.length;
   navCurrent = null;
   updateNavProgress();
@@ -1886,9 +2098,10 @@ function onNavPosition(pos){
   const {latitude:la, longitude:ln} = pos.coords;
   window._navLa = la; window._navLn = ln;
 
-  // 현재 목표 없으면 가장 가까운 점 선택
+  // 현재 목표 없으면 다음 점 선택
   if(!navCurrent || !navQueue.includes(navCurrent)){
-    navCurrent = findNearest(la, ln);
+    // 경로 모드: 큐 순서대로 / 자동 모드: 가까운 순
+    navCurrent = (navRouteOrder && navRouteOrder.length) ? navQueue[0] : findNearest(la, ln);
     navAlerted = false;
     if(!navCurrent){ navComplete(); return; }
     drawNavTarget();
@@ -1922,18 +2135,21 @@ function onNavPosition(pos){
   }
 }
 
-function enableNavTest(){
-  document.getElementById('navTestRow').style.display = 'block';
-  // 테스트 배너 표시
+function showTestBanner(){
   let banner = document.getElementById('navTestBanner');
   if(!banner){
     banner = document.createElement('div');
     banner.id = 'navTestBanner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:6000;background:#fbbf24;color:#0c1e4a;text-align:center;padding:4px;font-size:12px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.2)';
-    banner.textContent = '🧪 테스트 모드 - 실제 데이터는 저장되지 않습니다';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:6000;background:#fbbf24;color:#0c1e4a;text-align:center;padding:5px;font-size:12px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    banner.textContent = '🧪 테스트 모드 - 실제 데이터는 저장되지 않습니다 (작업자에게 영향 없음)';
     document.body.appendChild(banner);
   }
   banner.style.display = 'block';
+}
+
+function enableNavTest(){
+  document.getElementById('navTestRow').style.display = 'block';
+  showTestBanner();
   if(navWatch){ navigator.geolocation.clearWatch(navWatch); navWatch=null; }
   // 첫 위치: 첫 목표점 근처 (200m 떨어진 곳)
   buildNavQueue();
@@ -2080,6 +2296,11 @@ function stopNav(){
   if(navMarker){ map.removeLayer(navMarker); navMarker=null; }
   if(navLine){ map.removeLayer(navLine); navLine=null; }
   navCurrent = null; navQueue = [];
+  navRouteOrder = null;
+  if(routeDrawing){ routeDrawing=false; disableRouteDraw(); map.dragging.enable(); }
+  clearRouteVisuals(false);
+  document.getElementById('navStartPanel').style.display = 'none';
+  document.getElementById('routeDrawPanel').style.display = 'none';
 }
 
 function updateLegend(){
@@ -2116,6 +2337,26 @@ function bindEvents(){
   document.getElementById('navStop').onclick = stopNav;
   document.getElementById('navAlertOk').onclick = ()=>{ document.getElementById('navAlert').style.display='none'; };
   document.getElementById('navTestAuto').onclick = navTestAutoMove;
+  // 네비 시작 선택
+  document.getElementById('navModeAuto').onclick = startNavAuto;
+  document.getElementById('navModeRoute').onclick = startRouteMode;
+  document.getElementById('navStartCancel').onclick = ()=>{
+    document.getElementById('navStartPanel').style.display='none';
+    document.getElementById('navBtn').classList.remove('on');
+  };
+  // 경로 그리기
+  document.getElementById('routeFinish').onclick = finishRoute;
+  document.getElementById('routeClear').onclick = ()=>{
+    routeStart=null; routePath=[]; clearRouteVisuals(false);
+    document.getElementById('routeStep').textContent='1단계: 출발점을 탭하세요';
+    document.getElementById('routeInfo').textContent='';
+  };
+  document.getElementById('routeCancel').onclick = cancelRoute;
+  document.getElementById('routeRange').oninput = e=>{
+    routeRange = parseInt(e.target.value);
+    document.getElementById('routeRangeVal').textContent = routeRange+'m';
+    if(routePath.length>=2) updateRoutePreview();
+  };
   document.getElementById('moveGpsBtn').onclick = moveToGPS;
   document.getElementById('moveCancelBtn').onclick = cancelDrag;
   document.getElementById('undoMoveBtn').onclick = undoMove;
@@ -2612,6 +2853,14 @@ window.addEventListener('error', function(e){
 });
 
 window.addEventListener('DOMContentLoaded', ()=>{
+  // 테스트 모드면 즉시 배너 + 네비버튼 강조
+  if(IS_TEST){
+    showTestBanner();
+    setTimeout(()=>{
+      const nb = document.getElementById('navBtn');
+      if(nb){ nb.style.background='#fbbf24'; nb.style.color='#0c1e4a'; nb.title='테스트 네비'; }
+    }, 500);
+  }
   try{ initMap(); initBoxSelect(); }catch(e){ console.error('지도 초기화:', e); }
   try{ bindEvents(); }catch(e){ console.error('이벤트:', e); }
   initFirebase();
