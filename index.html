@@ -398,6 +398,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
             <input type="checkbox" id="dxfAppend"> 기존 라인에 추가
           </label>
         </div>
+        <button class="btn btn-sec btn-full" id="clearLinesBtn" style="margin-top:8px;color:#dc2626;border:1px solid #fca5a5">🗑 기존 라인 전부 삭제 (초기화)</button>
         <div class="adm-log" id="dxfLog"></div>
       </div>
 
@@ -2013,6 +2014,17 @@ function bindEvents(){
   const dxfFile = document.getElementById('dxfFile');
   dxfDrop.onclick = ()=>dxfFile.click();
   dxfFile.onchange = e=>{ if(e.target.files[0]) handleDXF(e.target.files[0]); };
+  // 라인 전부 삭제
+  document.getElementById('clearLinesBtn').onclick = ()=>{
+    if(!confirm('이 사업의 모든 라인을 삭제할까요?\n\n잘못된 라인을 지우고 DXF를 새로 올릴 때 사용합니다.')) return;
+    Promise.all([
+      db.ref('projects/'+PROJ_ID+'/dxfLines').remove(),
+      db.ref('projects/'+PROJ_ID+'/lineStatus').remove()
+    ]).then(()=>{
+      document.getElementById('dxfLog').textContent = '✅ 모든 라인 삭제됨 - DXF를 새로 올리세요';
+      toast('라인 전부 삭제됨');
+    });
+  };
   setupDrop(dxfDrop, handleDXF);
 
   // 엑셀 업로드
