@@ -2175,15 +2175,23 @@ function parseDXF(text){
                 [parseFloat(pdict[11]||0), parseFloat(pdict[21]||0)]];
     }
     if(rawPts.length < 2) return;
-    // 좌표축 판별
-    const eCol = (Math.abs(rawPts[0][0]) > Math.abs(rawPts[0][1])) ? 'x' : 'y';
+    // 좌표축 판별 (첫 유효점 기준)
+    let validRef = rawPts.find(p=> Math.abs(p[0])>50000 || Math.abs(p[1])>50000);
+    if(!validRef) return;  // 유효 좌표 없는 라인(0,0 심볼 등) 통째로 버림
+    const eCol = (Math.abs(validRef[0]) > Math.abs(validRef[1])) ? 'x' : 'y';
     const wgs = [];
+    let bad = 0;
     rawPts.forEach(([px,py])=>{
-      const N = (eCol==='x') ? py : px;
-      const E = (eCol==='x') ? px : py;
-      const [la, ln] = tmToWgs(N, E);
+      // TM 좌표 유효성 (한국 TM: N 10만~80만, E 10만~40만)
+      const N0 = (eCol==='x') ? py : px;
+      const E0 = (eCol==='x') ? px : py;
+      if(N0 < 100000 || N0 > 800000 || E0 < 100000 || E0 > 400000){ bad++; return; }
+      const [la, ln] = tmToWgs(N0, E0);
       if(la>30 && la<40 && ln>124 && ln<132) wgs.push([+la.toFixed(6), +ln.toFixed(6)]);
+      else bad++;
     });
+    // 깨진 점이 절반 넘으면 라인 신뢰 못함 → 버림
+    if(bad > rawPts.length/2) return;
     if(wgs.length >= 2){
       const row = {tp:'line', layer:ent.layer, pts:wgs};
       if(color) row.color = color;
