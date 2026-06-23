@@ -382,6 +382,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
         <div class="field">
           <select id="admProjSel"></select>
         </div>
+        <button class="btn btn-pri btn-full" id="admSaveProj" style="margin-bottom:8px">✓ 이 사업으로 저장 (계속 보기)</button>
         <div class="btn-row">
           <button class="btn btn-sec" id="admNewProj">+ 새 사업</button>
           <button class="btn btn-sec" id="admDelProj">사업 삭제</button>
@@ -458,6 +459,8 @@ const WORKER_COLORS = {1:'#3b82f6', 2:'#f97316', 3:'#a855f7'};
 
 // URL 파라미터로 사업 ID 받기 (?p=xxx)
 const urlParams = new URLSearchParams(location.search);
+// 사업 선택 우선순위: URL ?p= (공유링크) > 저장한 사업 > 없음
+// 단, ?p가 없으면 저장한 사업을 계속 사용
 let PROJ_ID = urlParams.get('p') || localStorage.getItem('lastProj') || '';
 // 테스트 모드: ?test 또는 &test 또는 ?test=1 모두 인식
 
@@ -1037,10 +1040,23 @@ function loadProjects(){
 function loadProject(pid){
   PROJ_ID = pid;
   localStorage.setItem('lastProj', pid);
+  loadProjectView(pid);
+}
+
+// 사업 데이터 로드 (localStorage 저장 없이 - 미리보기용)
+let _curRef = null;
+function loadProjectView(pid){
+  // 이전 사업 리스너 정리 (데이터 섞임 방지)
+  if(_curRef){ _curRef.off(); }
+  // 기존 데이터 초기화
+  POINTS = {}; LINES = []; STATUS = {}; LINESTATUS = {}; DELETED_COUNT = 0;
+
+  PROJ_ID = pid;
   document.getElementById('projName').textContent = PROJECTS[pid]?.name || '';
   updateShareUrl();
 
   const ref = db.ref('projects/'+pid);
+  _curRef = ref;
 
   // 포인트
   ref.child('points').on('value', s=>{
@@ -1968,7 +1984,24 @@ function bindEvents(){
   });
 
   // 관리자 기능
-  document.getElementById('admProjSel').onchange = e=>loadProject(e.target.value);
+  document.getElementById('admProjSel').onchange = e=>{
+    // 미리 전환해서 보여주기 (저장은 저장버튼으로)
+    loadProjectView(e.target.value);
+  };
+  document.getElementById('admSaveProj').onclick = ()=>{
+    const sel = document.getElementById('admProjSel').value;
+    if(!sel) return;
+    // localStorage에 확정 저장 + URL도 갱신 (충돌 방지)
+    localStorage.setItem('lastProj', sel);
+    PROJ_ID = sel;
+    // URL의 ?p= 를 현재 사업으로 교체 (공유링크와 충돌 방지)
+    const newUrl = location.origin + location.pathname + '?p=' + sel;
+    history.replaceState(null, '', newUrl);
+    loadProject(sel);
+    toast('✓ "' + (PROJECTS[sel]?.name||sel) + '" 사업으로 저장됨');
+    // 관리자 패널 닫기
+    document.getElementById('adminOvl').classList.remove('show');
+  };
   document.getElementById('admNewProj').onclick = ()=>openOvl('newProjOvl');
   document.getElementById('npCreate').onclick = createProject;
   document.getElementById('admDelProj').onclick = deleteProject;
@@ -2175,16 +2208,13 @@ function parseDXF(text){
                 [parseFloat(pdict[11]||0), parseFloat(pdict[21]||0)]];
     }
     if(rawPts.length < 2) return;
-    // 좌표축 판별 (첫 유효점 기준)
-    let validRef = rawPts.find(p=> Math.abs(p[0])>50000 || Math.abs(p[1])>50000);
-    if(!validRef) return;  // 유효 좌표 없는 라인(0,0 심볼 등) 통째로 버림
-    const eCol = (Math.abs(validRef[0]) > Math.abs(validRef[1])) ? 'x' : 'y';
+    // ★ 한국 측량 DXF 표준: X=경도(E,동서), Y=위도(N,북남) 고정
     const wgs = [];
     let bad = 0;
     rawPts.forEach(([px,py])=>{
+      // px=X=E(동), py=Y=N(북)
+      const E0 = px, N0 = py;
       // TM 좌표 유효성 (한국 TM: N 10만~80만, E 10만~40만)
-      const N0 = (eCol==='x') ? py : px;
-      const E0 = (eCol==='x') ? px : py;
       if(N0 < 100000 || N0 > 800000 || E0 < 100000 || E0 > 400000){ bad++; return; }
       const [la, ln] = tmToWgs(N0, E0);
       if(la>30 && la<40 && ln>124 && ln<132) wgs.push([+la.toFixed(6), +ln.toFixed(6)]);
