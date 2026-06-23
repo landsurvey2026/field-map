@@ -659,7 +659,7 @@ function renderLines(){
 
   const bounds = map.getBounds().pad(0.3);
   const z = map.getZoom();
-  const showText = z >= 18;  // 줌 18 이상에서만 텍스트 표시
+  const showText = z >= 17;  // 줌 18 이상에서만 텍스트 표시
 
   LINES.forEach((ln, idx)=>{
     // 텍스트 처리
@@ -2085,36 +2085,30 @@ function doSearch(e){
   const list = document.getElementById('searchList');
   if(!q){ list.innerHTML=''; return; }
   let html='';
-  // 포인트 검색
-  Object.keys(POINTS).filter(n=>n.toLowerCase().includes(q)).slice(0,15).forEach(name=>{
-    html += `<div class="litem" onclick="goToPoint('${name}');document.getElementById('searchOvl').classList.remove('show')">
-      <span class="ltag" style="background:${statusColor(name)}"></span>
-      <div class="lname">${name}</div></div>`;
-  });
-  // 텍스트 검색 (DXF 글자)
+
+  // ① 지도 글자(텍스트) 검색 - 최우선
   let txtCount = 0;
   LINES.forEach((l,i)=>{
     if(l.tp!=='text' || !l.content) return;
-    if(txtCount >= 20) return;
+    if(txtCount >= 30) return;
     if(l.content.toLowerCase().includes(q)){
       txtCount++;
       html += `<div class="litem" onclick="goToText(${i});document.getElementById('searchOvl').classList.remove('show')">
         <span class="ltag" style="background:#f59e0b"></span>
-        <div><div class="lname">${l.content}</div><div class="lsub">텍스트 · ${l.layer||''}</div></div></div>`;
+        <div><div class="lname">${l.content}</div><div class="lsub">📝 지도 글자${l.layer?' · '+l.layer:''}</div></div></div>`;
     }
   });
-  // 레이어 검색
-  const seenLayers = new Set();
-  LINES.forEach((l,i)=>{
-    if(l.tp==='text' || !l.layer) return;
-    if(seenLayers.has(l.layer)) return;
-    if(l.layer.toLowerCase().includes(q)){
-      seenLayers.add(l.layer);
-      html += `<div class="litem" onclick="goToLine(${i});document.getElementById('searchOvl').classList.remove('show')">
-        <span class="ltag" style="background:${l.color||'#3b82f6'}"></span>
-        <div><div class="lname">${l.layer} #${i+1}</div><div class="lsub">라인</div></div></div>`;
-    }
+
+  // ② 포인트 검색
+  let ptCount = 0;
+  Object.keys(POINTS).filter(n=>n.toLowerCase().includes(q)).forEach(name=>{
+    if(ptCount >= 15) return;
+    ptCount++;
+    html += `<div class="litem" onclick="goToPoint('${name}');document.getElementById('searchOvl').classList.remove('show')">
+      <span class="ltag" style="background:${statusColor(name)}"></span>
+      <div><div class="lname">${name}</div><div class="lsub">📍 포인트</div></div></div>`;
   });
+
   list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#94a3b8">결과 없음</div>';
 }
 
@@ -2123,7 +2117,6 @@ window.goToText = function(idx){
   const t = LINES[idx];
   if(t && t.la){
     map.setView([t.la, t.ln], 19);
-    // 잠깐 강조
     const m = L.circleMarker([t.la, t.ln], {radius:18, color:'#f59e0b', weight:3, fillColor:'#fbbf24', fillOpacity:.3}).addTo(map);
     setTimeout(()=>map.removeLayer(m), 3000);
   }
@@ -2376,6 +2369,13 @@ function showLayerPicker(items){
     <button id="dxfSelAll" class="btn btn-sec" style="flex:1;padding:8px;font-size:12px">전체선택</button>
     <button id="dxfSelNone" class="btn btn-sec" style="flex:1;padding:8px;font-size:12px">전체해제</button>
   </div>`;
+  // 텍스트(글자) 개수
+  const txtTotal = items.filter(it=>it.tp==='text').length;
+  html += `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px;background:#fffbeb;border-radius:8px;font-size:13px;cursor:pointer">
+    <input type="checkbox" id="dxfInclText" checked>
+    <span style="flex:1">📝 지도 글자(텍스트) 포함</span>
+    <span style="font-size:11px;color:#b45309">${txtTotal}개</span>
+  </label>`;
   html += `<button id="dxfConfirm" class="btn btn-pri btn-full" style="margin-top:8px">✓ 선택한 레이어 업로드</button>`;
 
   let picker = document.getElementById('dxfLayerPicker');
@@ -2403,10 +2403,12 @@ function confirmDxfUpload(){
   });
   if(selectedLayers.size === 0){ toast('레이어를 선택하세요'); return; }
 
-  // 선택된 레이어의 라인 + 텍스트만
-  const filtered = _dxfParsed.filter(it=> selectedLayers.has(it.layer));
-  const lines = filtered.filter(it=>it.tp==='line');
-  const texts = filtered.filter(it=>it.tp==='text');
+  // 라인: 선택한 레이어만 / 텍스트: 전부 (글자는 어차피 검색·줌인용)
+  const lines = _dxfParsed.filter(it=> it.tp==='line' && selectedLayers.has(it.layer));
+  const allTexts = _dxfParsed.filter(it=> it.tp==='text');
+  const includeText = document.getElementById('dxfInclText').checked;
+  const texts = includeText ? allTexts : [];
+  const filtered = lines.concat(texts);
 
   const append = document.getElementById('dxfAppend').checked;
   let merged = filtered;
@@ -2416,7 +2418,7 @@ function confirmDxfUpload(){
   const log = document.getElementById('dxfLog');
   log.textContent = '⏳ 업로드 중...';
   db.ref('projects/'+PROJ_ID+'/dxfLines').set(merged).then(()=>{
-    log.textContent = `✅ 라인 ${lines.length}개, 텍스트 ${texts.length}개 ${append?'추가':'업로드'} 완료`;
+    log.textContent = `✅ 라인 ${lines.length}개, 글자 ${texts.length}개 ${append?'추가':'업로드'} 완료`;
     toast('DXF 업로드 완료');
     picker.innerHTML = '';
     _dxfParsed = null;
