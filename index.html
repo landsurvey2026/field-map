@@ -197,6 +197,10 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   padding-top:16px;border-top:1px solid #e2e8f0;font-style:italic;line-height:1.6}
 
 /* Leaflet 라벨 */
+.dxf-text{background:transparent !important;border:none !important;white-space:nowrap}
+.dxf-text span{font-size:11px;font-weight:700;color:#0c1e4a;
+  text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 2px #fff;
+  background:rgba(255,255,255,.5);padding:0 2px;border-radius:2px}
 .line-label{background:transparent;border:none;box-shadow:none;
   color:var(--w1);font-weight:800;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
 .pt-label{background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:5px;
@@ -512,7 +516,7 @@ function initMap(){
 
   map.on('dblclick', onMapDblClick);
   map.doubleClickZoom.disable();
-  map.on('zoomend', ()=>{ updateLabelVisibility(); saveMapPos(); });
+  map.on('zoomend', ()=>{ updateLabelVisibility(); renderLines(); saveMapPos(); });
   map.on('moveend', ()=>{ saveMapPos(); renderPoints(); renderLines(); });
 }
 
@@ -654,10 +658,25 @@ function renderLines(){
   lineLayers = [];
 
   const bounds = map.getBounds().pad(0.3);
+  const z = map.getZoom();
+  const showText = z >= 18;  // 줌 18 이상에서만 텍스트 표시
 
   LINES.forEach((ln, idx)=>{
-    if(ln.tp==='text' || !ln.pts || ln.pts.length<2){ lineLayers[idx]=null; return; }
-    // 라인 일부라도 화면에 걸치면 그림
+    // 텍스트 처리
+    if(ln.tp==='text'){
+      lineLayers[idx]=null;
+      if(!showText || !ln.la) return;
+      if(!bounds.contains([ln.la, ln.ln])) return;
+      const txtIcon = L.divIcon({
+        className: 'dxf-text',
+        html: `<span>${ln.content}</span>`,
+        iconSize: null
+      });
+      const m = L.marker([ln.la, ln.ln], {icon:txtIcon, interactive:false});
+      _lineLayer.addLayer(m);
+      return;
+    }
+    if(!ln.pts || ln.pts.length<2){ lineLayers[idx]=null; return; }
     const inView = ln.pts.some(pt=>bounds.contains(pt));
     if(!inView){ lineLayers[idx]=null; return; }
 
@@ -2202,6 +2221,8 @@ function parseDXF(text){
         if(pairs.some(p=>p[0]===420)) color=rgbHex(parseInt(pdict[420]));
         else if(pairs.some(p=>p[0]===62)){ const ci=parseInt(pdict[62]); if(ci!==0&&ci!==256) color=aci2hex(ci); }
         entities.push({type:etype, layer:pdict[8]||'0', pairs, color});
+      } else if(['TEXT','MTEXT'].includes(etype)){
+        entities.push({type:etype, layer:pdict[8]||'0', pairs, color:null});
       }
     }
   }
@@ -2210,6 +2231,28 @@ function parseDXF(text){
   entities.forEach(ent=>{
     const pdict = {}; ent.pairs.forEach(([g,v])=>{ if(!(g in pdict)) pdict[g]=v; });
     const color = ent.color || layerColors[ent.layer];
+
+    // ── 텍스트 처리 ──
+    if(ent.type==='TEXT' || ent.type==='MTEXT'){
+      let content = (pdict[1]||'').trim();
+      // MTEXT 포맷 코드 제거 (\f, {}, 등)
+      content = content.replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'').trim();
+      if(!content) return;
+      // 깨진 텍스트 거르기: 정상 문자(숫자/영문/한글/일반기호) 비율이 70% 이상만
+      const goodChars = (content.match(/[0-9A-Za-z가-힣.\-_/() ]/g)||[]).length;
+      if(goodChars / content.length < 0.7) return;
+      // 의미있는 내용만 (숫자나 글자가 하나라도)
+      if(!/[0-9A-Za-z가-힣]/.test(content)) return;
+      const tx = parseFloat(pdict[10]), ty = parseFloat(pdict[20]);
+      if(isNaN(tx) || isNaN(ty)) return;
+      if(ty<100000 || ty>800000 || tx<100000 || tx>400000) return;
+      const [la, ln] = tmToWgs(ty, tx);  // X=E, Y=N
+      if(la>30 && la<40 && ln>124 && ln<132){
+        result.push({tp:'text', layer:ent.layer, content, la:+la.toFixed(6), ln:+ln.toFixed(6)});
+      }
+      return;
+    }
+
     let rawPts = [];
     if(ent.type==='LWPOLYLINE' || ent.type==='POLYLINE'){
       const xs = ent.pairs.filter(p=>p[0]===10).map(p=>parseFloat(p[1]));
