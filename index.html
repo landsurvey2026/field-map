@@ -2085,21 +2085,48 @@ function doSearch(e){
   const list = document.getElementById('searchList');
   if(!q){ list.innerHTML=''; return; }
   let html='';
-  Object.keys(POINTS).filter(n=>n.toLowerCase().includes(q)).slice(0,20).forEach(name=>{
+  // 포인트 검색
+  Object.keys(POINTS).filter(n=>n.toLowerCase().includes(q)).slice(0,15).forEach(name=>{
     html += `<div class="litem" onclick="goToPoint('${name}');document.getElementById('searchOvl').classList.remove('show')">
       <span class="ltag" style="background:${statusColor(name)}"></span>
       <div class="lname">${name}</div></div>`;
   });
+  // 텍스트 검색 (DXF 글자)
+  let txtCount = 0;
+  LINES.forEach((l,i)=>{
+    if(l.tp!=='text' || !l.content) return;
+    if(txtCount >= 20) return;
+    if(l.content.toLowerCase().includes(q)){
+      txtCount++;
+      html += `<div class="litem" onclick="goToText(${i});document.getElementById('searchOvl').classList.remove('show')">
+        <span class="ltag" style="background:#f59e0b"></span>
+        <div><div class="lname">${l.content}</div><div class="lsub">텍스트 · ${l.layer||''}</div></div></div>`;
+    }
+  });
   // 레이어 검색
+  const seenLayers = new Set();
   LINES.forEach((l,i)=>{
     if(l.tp==='text' || !l.layer) return;
+    if(seenLayers.has(l.layer)) return;
     if(l.layer.toLowerCase().includes(q)){
+      seenLayers.add(l.layer);
       html += `<div class="litem" onclick="goToLine(${i});document.getElementById('searchOvl').classList.remove('show')">
         <span class="ltag" style="background:${l.color||'#3b82f6'}"></span>
         <div><div class="lname">${l.layer} #${i+1}</div><div class="lsub">라인</div></div></div>`;
     }
   });
   list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#94a3b8">결과 없음</div>';
+}
+
+// 텍스트 위치로 이동
+window.goToText = function(idx){
+  const t = LINES[idx];
+  if(t && t.la){
+    map.setView([t.la, t.ln], 19);
+    // 잠깐 강조
+    const m = L.circleMarker([t.la, t.ln], {radius:18, color:'#f59e0b', weight:3, fillColor:'#fbbf24', fillOpacity:.3}).addTo(map);
+    setTimeout(()=>map.removeLayer(m), 3000);
+  }
 }
 
 // ═══════════════════════════════════════════════════
@@ -2238,10 +2265,7 @@ function parseDXF(text){
       // MTEXT 포맷 코드 제거 (\f, {}, 등)
       content = content.replace(/\\[A-Za-z][^;]*;/g,'').replace(/[{}]/g,'').trim();
       if(!content) return;
-      // 깨진 텍스트 거르기: 정상 문자(숫자/영문/한글/일반기호) 비율이 70% 이상만
-      const goodChars = (content.match(/[0-9A-Za-z가-힣.\-_/() ]/g)||[]).length;
-      if(goodChars / content.length < 0.7) return;
-      // 의미있는 내용만 (숫자나 글자가 하나라도)
+      // 의미있는 내용만 (숫자/영문/한글 하나라도)
       if(!/[0-9A-Za-z가-힣]/.test(content)) return;
       const tx = parseFloat(pdict[10]), ty = parseFloat(pdict[20]);
       if(isNaN(tx) || isNaN(ty)) return;
@@ -2294,7 +2318,21 @@ function handleDXF(file){
   const reader = new FileReader();
   reader.onload = e=>{
     try{
-      const items = parseDXF(e.target.result);
+      // 한글 DXF는 EUC-KR(CP949) 인코딩 → 디코딩
+      const buf = e.target.result;
+      let text;
+      try{
+        // EUC-KR 우선 시도 (한국 CAD 표준)
+        text = new TextDecoder('euc-kr').decode(buf);
+        // 디코딩 검증: 한글이 제대로 나오는지 (깨지면 ?나 �)
+        if(text.includes('\uFFFD') && (text.match(/\uFFFD/g)||[]).length > 50){
+          // 너무 많이 깨지면 UTF-8로 재시도
+          text = new TextDecoder('utf-8').decode(buf);
+        }
+      }catch(err){
+        text = new TextDecoder('utf-8').decode(buf);
+      }
+      const items = parseDXF(text);
       const lines = items.filter(it=>it.tp==='line');
       if(!lines.length){ log.textContent='❌ 추출된 라인이 없습니다'; return; }
       _dxfParsed = items;
@@ -2302,7 +2340,7 @@ function handleDXF(file){
       log.textContent = `파싱 완료: ${lines.length}개 라인 - 올릴 레이어를 선택하세요`;
     }catch(ex){ log.textContent='❌ 오류: '+ex.message; }
   };
-  reader.readAsText(file, 'utf-8');
+  reader.readAsArrayBuffer(file);
 }
 
 // 레이어 선택 UI
