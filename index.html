@@ -22,93 +22,148 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
+<!-- 폰트 (서울시 상수도 프로그램과 동일 계열) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
 <style>
 :root{
   --navy:#0c1e4a; --navy2:#0f2952; --sky:#38bdf8; --sky-d:#0ea5e9;
-  --ink:#1e293b; --mut:#64748b; --line:#e2e8f0; --bg:#f1f5f9;
+  --ink:#1e293b; --mut:#64748b; --line:#e4e8ee; --bg:#f1f5f9;
   --ok:#16a34a; --warn:#f59e0b; --bad:#dc2626;
   --w1:#3b82f6; --w2:#f97316; --w3:#a855f7;
+  --sans:'IBM Plex Sans KR',-apple-system,'Malgun Gothic',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r-sm:8px; --r-md:11px; --r-lg:16px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--ink)}
-#app{position:fixed;inset:0;display:flex;flex-direction:column}
+html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink);-webkit-font-smoothing:antialiased}
+#app{position:fixed;inset:0;background:#0d1117;overflow:hidden}
 
-/* ── 상단 바 ── */
-#topbar{height:52px;background:var(--navy);display:flex;align-items:center;
-  padding:0 8px;gap:6px;color:#fff;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-#topbar .logo{font-size:16px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:6px;flex-shrink:0}
-#topbar .logo .dot{width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0}
+/* ── 상단 바 (지도 위 반투명 오버레이) ── */
+#topbar{position:absolute;top:0;left:0;right:0;height:auto;min-height:54px;
+  background:linear-gradient(180deg,rgba(9,20,48,.94),rgba(9,20,48,.72) 75%,transparent);
+  display:flex;align-items:center;flex-wrap:wrap;
+  padding:11px 12px;gap:6px;color:#fff;z-index:1000}
+#topbar .logo{font-size:15.5px;font-weight:700;letter-spacing:-.3px;display:flex;align-items:center;gap:7px;flex-shrink:0}
+#topbar .logo .dot{width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0;
+  box-shadow:0 0 0 4px rgba(56,189,248,.22)}
 #topbar .logo-txt{white-space:nowrap}
-#projName{font-size:12px;color:var(--sky);font-weight:600;
-  max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1}
+#projName{font-family:var(--mono);font-size:11px;color:var(--sky);font-weight:600;letter-spacing:.2px;
+  max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1;
+  background:rgba(56,189,248,.14);border:1px solid rgba(56,189,248,.28);border-radius:7px;padding:3px 8px}
 #topbar .spacer{flex:1;min-width:0}
-.tbtn{background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;
-  font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  gap:5px;flex-shrink:0;padding:7px 12px}
-.tbtn.icon{width:38px;height:38px;padding:0;font-size:17px}
-.tbtn:active{background:rgba(255,255,255,.25)}
-.tbtn.admin{background:var(--sky);color:var(--navy)}
+.tbtn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:var(--r-sm);
+  font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  gap:5px;flex-shrink:0;padding:7px 11px;transition:background .12s}
+.tbtn.icon{width:36px;height:36px;padding:0;font-size:16px}
+.tbtn:active{background:rgba(255,255,255,.3)}
+.tbtn.admin{background:var(--sky);border-color:var(--sky);color:#06222a;font-weight:700}
 @media(max-width:600px){
-  #topbar{gap:4px;padding:0 6px}
-  .tbtn.icon{width:34px;height:34px;font-size:15px}
-  #topbar .logo{font-size:14px}
-  #projName{max-width:80px;font-size:11px}
+  #topbar{gap:4px;padding:9px 8px}
+  .tbtn.icon{width:33px;height:33px;font-size:14.5px}
+  #topbar .logo{font-size:13.5px}
+  #projName{max-width:74px;font-size:10px}
 }
 @media(max-width:400px){
   #topbar .logo-txt{display:none}
-  #projName{max-width:100px}
+  #projName{max-width:96px}
 }
 
-/* ── 지도 ── */
-#map{flex:1;width:100%;background:#aadaff;z-index:1}
+/* ── 지도 (풀블리드) ── */
+#map{position:absolute;inset:0;width:100%;height:100%;background:#aadaff;z-index:1}
+.leaflet-control-attribution{font-size:9px}
 
 /* ── 통계 칩 ── */
-#statChips{position:absolute;top:62px;left:10px;z-index:500;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 80px)}
-.chip{background:#fff;border-radius:20px;padding:5px 11px;font-size:12px;font-weight:700;
-  box-shadow:0 2px 8px rgba(0,0,0,.12);display:flex;align-items:center;gap:5px}
+#statChips{position:absolute;top:68px;left:10px;z-index:500;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 80px)}
+.chip{background:#fff;border-radius:20px;padding:6px 12px;font-family:var(--mono);font-size:12px;font-weight:600;
+  box-shadow:0 3px 10px rgba(15,23,42,.14);display:flex;align-items:center;gap:6px;border:1px solid var(--line)}
 .chip .cdot{width:8px;height:8px;border-radius:50%}
 
-/* ── 우측 도구 ── */
-#tools{position:absolute;top:62px;right:10px;z-index:500;display:flex;flex-direction:column;gap:6px}
-.tool{width:42px;height:42px;background:#fff;border:none;border-radius:10px;
-  box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;font-size:18px;
+/* ── 우측 도구 (참고 디자인: 레이어박스 / 편집박스 / GPS 원형 / 전체보기 필) ── */
+.layerbox{position:absolute;top:68px;right:10px;z-index:500;display:flex;flex-direction:column;
+  background:#fff;border-radius:var(--r-md);overflow:hidden;box-shadow:0 3px 10px rgba(15,23,42,.14);border:1px solid var(--line)}
+.layerbox button{border:none;background:#fff;width:44px;height:44px;font-size:18px;color:var(--ink);cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.layerbox button:active{background:#f1f5f9}
+
+.editbox{position:absolute;top:120px;right:10px;z-index:500;display:flex;flex-direction:column;
+  background:#fff;border-radius:var(--r-md);overflow:hidden;box-shadow:0 3px 10px rgba(15,23,42,.14);border:1px solid var(--line)}
+.editbox button{border:none;border-bottom:1px solid var(--line);background:#fff;width:44px;height:44px;font-size:17px;
+  color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.editbox button:last-child{border-bottom:none}
+.editbox button.on{background:var(--sky);color:#fff}
+.editbox button:active{background:#f1f5f9}
+
+.myloc-btn{position:absolute;bottom:112px;right:10px;z-index:500;width:44px;height:44px;border-radius:50%;
+  background:#fff;border:1px solid var(--line);box-shadow:0 3px 10px rgba(15,23,42,.14);font-size:19px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;color:var(--ink)}
-.tool:active{transform:scale(.95)}
-.tool.on{background:var(--sky);color:#fff}
+.myloc-btn.on{background:var(--sky);color:#fff}
+
+.fitall-btn{position:absolute;bottom:60px;right:10px;z-index:500;background:rgba(12,30,74,.88);color:#fff;border:none;
+  border-radius:20px;padding:8px 14px;font-family:var(--sans);font-size:12px;font-weight:700;cursor:pointer;
+  box-shadow:0 3px 10px rgba(15,23,42,.2)}
+.fitall-btn:active{background:rgba(12,30,74,1)}
 
 /* ── 범례 ── */
-#legend{position:absolute;bottom:14px;left:10px;z-index:500;background:rgba(15,30,60,.92);
-  color:#fff;border-radius:12px;padding:10px 12px;font-size:12px;backdrop-filter:blur(4px)}
-#legend .lrow{display:flex;align-items:center;gap:7px;margin:3px 0}
-#legend .lc{width:11px;height:11px;border-radius:50%}
+#legend{position:absolute;bottom:14px;left:10px;z-index:500;background:rgba(12,30,74,.9);
+  color:#fff;border-radius:var(--r-md);padding:10px 13px;font-size:12px;backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,.08)}
+#legend .lrow{display:flex;align-items:center;gap:7px;margin:4px 0}
+#legend .lc{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 
 /* ── 크레딧 ── */
 #credit{position:absolute;bottom:14px;right:10px;z-index:500;
-  background:rgba(15,30,60,.7);color:#94a3b8;font-size:10px;
-  padding:4px 9px;border-radius:6px;font-style:italic}
+  background:rgba(12,30,74,.72);color:#9fb0c9;font-size:10px;font-family:var(--mono);
+  padding:5px 10px;border-radius:7px;letter-spacing:.2px}
 
-/* ── 하단 시트(목록) ── */
-#sheet{position:absolute;left:0;right:0;bottom:0;z-index:800;background:#fff;
-  border-radius:18px 18px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.18);
-  transform:translateY(calc(100% - 44px));transition:transform .3s;max-height:70vh;display:flex;flex-direction:column}
+/* ── 하단 시트 (포인트/라인 상세 — 참고 디자인 스타일) ── */
+#sheet{position:absolute;left:0;right:0;bottom:0;z-index:1600;background:#fff;
+  border-radius:20px 20px 0 0;box-shadow:0 -6px 30px rgba(15,23,42,.28);
+  transform:translateY(108%);transition:transform .32s cubic-bezier(.32,.72,0,1);max-height:76vh;
+  overflow-y:auto;padding-bottom:18px}
 #sheet.open{transform:translateY(0)}
-#sheetHandle{height:44px;display:flex;align-items:center;justify-content:center;
-  gap:8px;cursor:pointer;font-weight:700;color:var(--navy);font-size:14px;border-bottom:1px solid var(--line)}
-#sheetHandle .grab{width:36px;height:4px;background:var(--line);border-radius:2px;position:absolute;top:7px;left:50%;transform:translateX(-50%)}
-#sheetBody{overflow-y:auto;padding:8px 0}
-.litem{padding:11px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px;cursor:pointer}
+#sheet .grab{width:38px;height:4px;border-radius:3px;background:var(--line);margin:9px auto 2px}
+#sheet .s-close{position:absolute;top:8px;right:12px;background:#eef1f5;border:none;border-radius:8px;
+  color:#475569;font-size:14px;font-weight:700;width:30px;height:28px;cursor:pointer}
+#sheet .sh-pad{padding:6px 18px 4px}
+.sh-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:8px}
+.sh-no{font-family:var(--mono);font-size:12px;color:#0891b2;font-weight:600}
+.sh-line{font-size:17px;font-weight:700;margin-top:1px;color:var(--navy)}
+.sh-sub{font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:4px}
+.badge{font-family:var(--mono);font-size:11px;font-weight:700;padding:5px 11px;border-radius:20px;
+  white-space:nowrap;flex-shrink:0}
+.b-wait{background:#eef1f5;color:#64748b}
+.b-prog{background:#e0f2fe;color:#0369a1}
+.b-done{background:#e7f9f0;color:#109b6c}
+.b-hold{background:#fde9e9;color:#dc4545}
+.sh-sec{font-size:11.5px;color:var(--mut);font-weight:700;margin:15px 0 7px}
+.wk-picker{display:flex;gap:6px;margin:2px 0 6px}
+.wk-btn{flex:1;padding:11px 4px;border-radius:10px;font-family:var(--sans);font-size:12.5px;font-weight:700;
+  cursor:pointer;border:2px solid transparent;background:#f1f5f9;color:#475569}
+.wk-btn.on{color:#fff}
+.btn-fill{width:100%;margin-top:11px;background:var(--ok);color:#fff;font-family:var(--sans);font-weight:700;
+  font-size:14px;border:none;border-radius:11px;padding:13px;cursor:pointer}
+.btn-fill.undo{background:#f1f5f9;color:#475569;font-weight:600}
+.btn-hold{width:100%;margin-top:9px;background:#fff;border:1px solid #f0b4b4;color:var(--bad);
+  font-family:var(--sans);font-weight:600;font-size:13.5px;border-radius:11px;padding:11px;cursor:pointer}
+.btn-del{width:100%;margin-top:9px;background:#fff;border:1px solid #fca5a5;color:var(--bad);
+  font-family:var(--sans);font-weight:700;font-size:13px;border-radius:11px;padding:11px;cursor:pointer}
+
+/* ── 목록(검색결과 등) 아이템 ── */
+.litem{padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:10px;cursor:pointer;transition:.1s}
 .litem:active{background:#f8fafc}
 .litem .ltag{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .litem .lname{font-weight:600;font-size:14px}
-.litem .lsub{font-size:11px;color:var(--mut);margin-top:1px}
-.litem .lstat{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:700}
+.litem .lsub{font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:1px}
+.litem .lstat{margin-left:auto;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:700}
 
 /* ── 오버레이/모달 공통 ── */
-.ovl{position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.5);
+.ovl{position:fixed;inset:0;z-index:2000;background:rgba(8,14,30,.55);backdrop-filter:blur(2px);
   display:none;align-items:center;justify-content:center;padding:20px}
 .ovl.show{display:flex}
-.modal{background:#fff;border-radius:16px;max-width:480px;width:100%;
-  max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal{background:#fff;border-radius:18px;max-width:480px;width:100%;
+  max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(8,14,30,.35)}
 /* 현황표/실적 줄바꿈 방지 */
 #dashBody, #perfBody{font-size:13px}
 #dashBody *, #perfBody *{box-sizing:border-box}
@@ -120,100 +175,128 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 }
 .modal .mhead{padding:18px 20px;border-bottom:1px solid var(--line);
   display:flex;align-items:center;justify-content:space-between}
-.modal .mhead h3{font-size:17px;font-weight:800;color:var(--navy)}
-.modal .mclose{border:none;background:none;font-size:24px;color:var(--mut);cursor:pointer}
+.modal .mhead h3{font-size:16.5px;font-weight:800;color:var(--navy);letter-spacing:-.2px}
+.modal .mclose{border:none;background:#eef1f5;width:30px;height:30px;border-radius:8px;font-size:18px;color:var(--mut);cursor:pointer}
 .modal .mbody{padding:20px}
 
+/* ── 전체화면 다크 오버레이 (검색/관리자 — 참고 디자인 스타일) ── */
+.ovl.ovl-dark{padding:0;align-items:stretch;justify-content:stretch}
+.ovl.ovl-dark .modal{max-width:none;width:100%;height:100%;border-radius:0;
+  background:#0d1117;color:#e6edf3;box-shadow:none;display:flex;flex-direction:column;max-height:none}
+.ovl.ovl-dark .mhead{border-bottom:1px solid #1f2630;padding:16px 18px;flex-shrink:0}
+.ovl.ovl-dark .mhead h3{color:#e6edf3;font-family:var(--sans)}
+.ovl.ovl-dark .mclose{background:#1c2434;color:#9fb0c3}
+.ovl.ovl-dark .mbody{flex:1;overflow-y:auto;padding:16px 18px}
+.ovl-dark .field label{color:#9fb0c3}
+.ovl-dark .field input,.ovl-dark .field select{background:#161b22;border-color:#2b3a4d;color:#e6edf3}
+.ovl-dark .field input::placeholder{color:#5b677a}
+.ovl-dark .field input:focus,.ovl-dark .field select:focus{border-color:var(--sky)}
+.ovl-dark .btn-sec{background:#1c2434;color:#e6edf3;border-color:#2b3a4d}
+.ovl-dark .adm-sec{border-bottom-color:#1f2630}
+.ovl-dark .adm-sec h4{color:#5eead4}
+.ovl-dark .adm-log{color:#7d94ac}
+.ovl-dark .file-drop{background:#12181f;border-color:#2b3a4d;color:#7d94ac}
+.ovl-dark .file-drop:hover{border-color:var(--sky);color:var(--sky);background:#0f1b2a}
+.ovl-dark .litem{border-bottom-color:#1f2630}
+.ovl-dark .litem:active{background:#161d29}
+.ovl-dark .litem .lname{color:#e6edf3}
+.ovl-dark .litem .lsub{color:#7d94ac}
+.ovl-dark .litem .lstat{background:#1c2434;color:#9fb0c3}
+
 /* ── 관리자 게이트(PIN) ── */
-#gate{position:fixed;inset:0;z-index:3000;background:var(--navy);
+#gate{position:fixed;inset:0;z-index:3000;background:linear-gradient(180deg,#0b1220,#0f1b2e);
   display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:20px}
 #gate.show{display:flex}
 #gate .glogo{font-size:24px;font-weight:800;margin-bottom:6px}
 #gate .gsub{font-size:13px;color:var(--sky);margin-bottom:30px}
-#gatePin{font-size:28px;letter-spacing:12px;text-align:center;width:200px;
-  background:transparent;border:none;border-bottom:2px solid var(--sky);color:#fff;padding:10px 0;outline:none}
+#gatePin{font-family:var(--mono);font-size:28px;letter-spacing:12px;text-align:center;width:200px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:var(--r-md);
+  color:#fff;padding:12px 0;outline:none}
+#gatePin:focus{border-color:var(--sky)}
 #gatePin::placeholder{letter-spacing:8px;font-size:18px;color:#475569}
-#gateErr{color:#fca5a5;font-size:13px;margin-top:12px;height:18px}
+#gateErr{color:#fca5a5;font-size:13px;margin-top:12px;height:18px;font-weight:600}
 .gbtn{margin-top:24px;background:var(--sky);color:var(--navy);border:none;
-  border-radius:10px;padding:12px 40px;font-size:15px;font-weight:700;cursor:pointer}
+  border-radius:var(--r-md);padding:13px 40px;font-size:15px;font-weight:700;cursor:pointer}
+.gbtn:active{background:var(--sky-d)}
 
 /* ── 폼 요소 ── */
 .field{margin-bottom:14px}
 .field label{display:block;font-size:12px;font-weight:700;color:var(--mut);margin-bottom:5px}
-.field input,.field select{width:100%;padding:10px 12px;border:1px solid var(--line);
-  border-radius:8px;font-size:14px;outline:none}
-.field input:focus,.field select:focus{border-color:var(--sky)}
+.field input,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);
+  border-radius:var(--r-sm);font-family:var(--sans);font-size:14px;outline:none;background:#fff}
+.field input:focus,.field select:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(56,189,248,.15)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  padding:11px 18px;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer}
+  padding:11px 18px;border:none;border-radius:var(--r-sm);font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;transition:.12s}
 .btn-pri{background:var(--sky);color:#fff}
 .btn-pri:hover{background:var(--sky-d)}
-.btn-sec{background:var(--bg);color:var(--ink)}
+.btn-sec{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
 .btn-full{width:100%}
 .btn-row{display:flex;gap:8px;margin-top:8px}
 
 /* ── 관리자 패널 ── */
 .adm-sec{margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
 .adm-sec:last-child{border-bottom:none}
-.adm-sec h4{font-size:14px;font-weight:800;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.adm-log{font-size:12px;color:var(--mut);margin-top:8px;min-height:16px}
-.file-drop{border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;
-  color:var(--mut);font-size:13px;cursor:pointer;transition:.2s}
-.file-drop:hover{border-color:var(--sky);color:var(--sky)}
+.adm-sec h4{font-size:13.5px;font-weight:800;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:6px;
+  letter-spacing:-.1px}
+.adm-log{font-family:var(--mono);font-size:11.5px;color:var(--mut);margin-top:8px;min-height:16px}
+.file-drop{border:2px dashed var(--line);border-radius:var(--r-md);padding:18px;text-align:center;
+  color:var(--mut);font-size:13px;cursor:pointer;transition:.15s;background:#fafcff}
+.file-drop:hover{border-color:var(--sky);color:var(--sky-d);background:#f0faff}
 
 /* ── 토스트 ── */
 #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
-  z-index:4000;background:var(--navy);color:#fff;padding:11px 20px;border-radius:24px;
-  font-size:13px;font-weight:600;opacity:0;transition:.3s;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+  z-index:4000;background:var(--navy);color:#fff;padding:12px 20px;border-radius:24px;
+  font-size:13px;font-weight:600;opacity:0;transition:.28s;pointer-events:none;box-shadow:0 8px 24px rgba(8,14,30,.35)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ── 스플래시 ── */
 #splash{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0c1e4a,#0a3060);
-  display:flex;align-items:center;justify-content:center;
+  display:flex;align-items:center;justify-content:center;font-family:var(--sans);
   animation:splashHide .5s ease 2s forwards}
 @keyframes splashHide{99%{opacity:0;visibility:visible}100%{opacity:0;visibility:hidden;pointer-events:none}}
 #splash .scard{text-align:center;color:#fff;display:flex;flex-direction:column;align-items:center}
 #splash .smap{width:130px;height:auto;margin-bottom:18px;
   filter:drop-shadow(0 0 20px rgba(56,189,248,.5));opacity:.95}
-#splash .stitle{font-size:30px;font-weight:900}
+#splash .stitle{font-size:29px;font-weight:800;letter-spacing:-.5px}
 #splash .stitle .b{color:var(--sky)}
-#splash .sline{width:120px;height:2px;background:var(--sky);margin:14px auto}
-#splash .ssub{font-size:12px;color:#7dd3fc;font-style:italic}
+#splash .sline{width:110px;height:2px;background:var(--sky);margin:14px auto;opacity:.8}
+#splash .ssub{font-family:var(--mono);font-size:12px;color:#7dd3fc;letter-spacing:.4px}
 #splash .sbar{width:200px;height:4px;background:rgba(56,189,248,.2);border-radius:2px;overflow:hidden;margin:18px auto 0}
 #splash .sbar i{display:block;height:100%;background:var(--sky);width:0;animation:sbar 2s linear forwards}
 @keyframes sbar{to{width:100%}}
 @keyframes navPulse{from{transform:scale(1)}to{transform:scale(1.04)}}
 
 /* 매뉴얼 */
-.mn-intro{background:#f0f9ff;border-radius:10px;padding:14px;font-size:13px;
+.mn-intro{background:#f0f9ff;border-radius:var(--r-md);padding:14px;font-size:13px;
   color:#0c4a6e;line-height:1.6;margin-bottom:16px}
 .mn-sec{margin-bottom:18px}
-.mn-h{font-size:14px;font-weight:800;color:#0c1e4a;margin-bottom:8px;
-  padding-bottom:6px;border-bottom:2px solid #e0f2fe}
+.mn-h{font-size:13.5px;font-weight:800;color:#0c1e4a;margin-bottom:8px;
+  padding-bottom:6px;border-bottom:2px solid #e0f2fe;letter-spacing:-.1px}
 .mn-item{font-size:13px;color:#334155;line-height:1.5;padding:4px 0 4px 10px}
 .mn-item b{color:#0c1e4a}
 .mn-state{display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;padding:4px 0}
 .mn-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;box-sizing:border-box}
-.mn-foot{text-align:center;font-size:11px;color:#94a3b8;margin-top:20px;
-  padding-top:16px;border-top:1px solid #e2e8f0;font-style:italic;line-height:1.6}
+.mn-foot{text-align:center;font-family:var(--mono);font-size:11px;color:#94a3b8;margin-top:20px;
+  padding-top:16px;border-top:1px solid #e2e8f0;line-height:1.6}
 
 /* Leaflet 라벨 */
 .dxf-text{background:transparent !important;border:none !important;white-space:nowrap}
-.dxf-text span{font-size:22px;font-weight:800;color:#0c1e4a;
+.dxf-text span{font-size:22px;font-weight:700;color:#0c1e4a;font-family:var(--sans);
   text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff,
     0 0 4px #fff,0 0 4px #fff;
   letter-spacing:-.3px}
-.line-label{background:transparent;border:none;box-shadow:none;
-  color:var(--w1);font-weight:800;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
-.pt-label{background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:5px;
-  padding:1px 5px;font-size:11px;font-weight:800;color:#0c1e4a;
-  box-shadow:0 1px 4px rgba(0,0,0,.2);white-space:nowrap}
+.line-label{background:transparent;border:none;box-shadow:none;font-family:var(--mono);
+  color:var(--w1);font-weight:700;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
+.pt-label{background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:6px;
+  padding:2px 6px;font-family:var(--mono);font-size:11px;font-weight:700;color:#0c1e4a;
+  box-shadow:0 2px 6px rgba(15,23,42,.18);white-space:nowrap}
 .pt-label.hl{font-size:22px !important;padding:4px 10px;border:2px solid #38bdf8;
   background:#fff;color:#0ea5e9;z-index:9999 !important;box-shadow:0 0 0 4px rgba(56,189,248,.3),0 4px 12px rgba(0,0,0,.3)}
 .pt-label::before{display:none}
 
 @media(min-width:768px){
   #sheet{max-width:420px;left:auto;right:14px;bottom:14px;border-radius:16px;
-    transform:translateY(calc(100% - 44px))}
+    transform:translateY(130%)}
   #sheet.open{transform:translateY(0)}
 }
 </style>
@@ -252,13 +335,15 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   <div id="statChips"></div>
 
   <!-- 우측 도구 -->
-  <div id="tools">
-    <button class="tool" id="boxSelBtn" title="범위 선택">▣</button>
-    <button class="tool" id="moveBtn" title="점 이동">✥</button>
-    <button class="tool" id="layerBtn" title="지도 전환">🗺️</button>
-    <button class="tool" id="gpsBtn" title="내 위치">📍</button>
-    <button class="tool" id="fitBtn" title="전체 보기">⬜</button>
+  <div class="layerbox">
+    <button id="layerBtn" title="지도 전환">🗺️</button>
   </div>
+  <div class="editbox">
+    <button id="boxSelBtn" title="범위 선택">▣</button>
+    <button id="moveBtn" title="점 이동">✥</button>
+  </div>
+  <button class="myloc-btn" id="gpsBtn" title="내 위치">📍</button>
+  <button class="fitall-btn" id="fitBtn">⬜ 전체보기</button>
 
   <!-- 범례 -->
   <div id="legend">
@@ -272,7 +357,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   <div id="credit">Dev. Seo Young Min</div>
 
   <!-- 범위선택 안내/패널 -->
-  <div id="boxHint" style="display:none;position:absolute;top:62px;left:50%;transform:translateX(-50%);
+  <div id="boxHint" style="display:none;position:absolute;top:70px;left:50%;transform:translateX(-50%);
     z-index:600;background:#0c1e4a;color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;
     box-shadow:0 4px 16px rgba(0,0,0,.3)">드래그 또는 점을 탭하여 선택하세요</div>
 
@@ -290,7 +375,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
   </div>
 
   <!-- 이동 모드 안내 -->
-  <div id="moveHint" style="display:none;position:absolute;top:62px;left:50%;transform:translateX(-50%);
+  <div id="moveHint" style="display:none;position:absolute;top:70px;left:50%;transform:translateX(-50%);
     z-index:600;background:#7c3aed;color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;
     box-shadow:0 4px 16px rgba(0,0,0,.3)">옮길 점을 탭하세요</div>
 
@@ -312,13 +397,18 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
     <button id="undoMoveBtn" style="background:#7c3aed;color:#fff;border:none;border-radius:16px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer">↩ 되돌리기</button>
   </div>
 
-  
+  <!-- 포인트/라인 상세 시트 -->
+  <div id="sheet">
+    <div class="grab"></div>
+    <button class="s-close" id="sheetClose">×</button>
+    <div class="sh-pad" id="sheetBody"></div>
+  </div>
 
 
 </div>
 
 <!-- 검색 모달 -->
-<div class="ovl" id="searchOvl">
+<div class="ovl ovl-dark" id="searchOvl">
   <div class="modal">
     <div class="mhead"><h3>검색</h3><button class="mclose" data-close>×</button></div>
     <div class="mbody">
@@ -377,7 +467,7 @@ html,body{height:100%;font-family:'Pretendard',-apple-system,'Malgun Gothic',san
 </div>
 
 <!-- 관리자 패널 -->
-<div class="ovl" id="adminOvl">
+<div class="ovl ovl-dark" id="adminOvl">
   <div class="modal">
     <div class="mhead"><h3>⚙ 관리자</h3><button class="mclose" data-close>×</button></div>
     <div class="mbody">
@@ -838,6 +928,14 @@ function renderListModal(){
   }
 }
 
+function openSheet(html){
+  document.getElementById('sheetBody').innerHTML = html;
+  document.getElementById('sheet').classList.add('open');
+}
+function closeSheet(){
+  document.getElementById('sheet').classList.remove('open');
+}
+
 function onPointClick(name){
   const p = POINTS[name];
   const st = STATUS[name] || {};
@@ -845,88 +943,75 @@ function onPointClick(name){
   const worker = st.worker || 0;
   const added = p.added;
 
-  // 담당자 배치 버튼
-  let workerBox = '<div style="display:flex;gap:5px;margin:8px 0">';
+  // 담당자 배치 버튼 (참고 디자인 wk-btn 스타일)
+  let workerBox = '<div class="wk-picker">';
   for(let w=1; w<=3; w++){
     const on = worker==w;
-    workerBox += `<button class="wbtn" data-w="${w}" style="flex:1;padding:10px 4px;border:2px solid ${WORKER_COLORS[w]};
-      background:${on?WORKER_COLORS[w]:'#fff'};color:${on?'#fff':WORKER_COLORS[w]};
-      border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
+    workerBox += `<button class="wbtn wk-btn${on?' on':''}" data-w="${w}"
+      style="border-color:${WORKER_COLORS[w]};${on?`background:${WORKER_COLORS[w]}`:''};color:${on?'#fff':WORKER_COLORS[w]}">
       ${on?'✓ ':''}${WORKER_NAMES[w]}</button>`;
   }
   workerBox += '</div>';
 
-  // 상태 뱃지
-  let badge = '';
-  if(done) badge = '<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ 완료</span>';
-  else if(worker) badge = `<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${WORKER_NAMES[worker]} 배치됨</span>`;
-  else badge = '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">미할당</span>';
+  // 상태 뱃지 (참고 디자인 badge 클래스)
+  let badge = '<span class="badge b-wait">미할당</span>';
+  if(done) badge = '<span class="badge b-done">✓ 완료</span>';
+  else if(worker) badge = `<span class="badge b-prog">${WORKER_NAMES[worker]} 배치됨</span>`;
 
   // 완료/완료취소 버튼 (배치된 후에만)
   let doneBtn = '';
   if(worker){
-    if(done){
-      doneBtn = `<button class="undoBtn" style="width:100%;padding:9px;border:none;border-radius:8px;margin-bottom:5px;
-        background:#f1f5f9;color:#475569;font-size:13px;font-weight:700;cursor:pointer">↩ 완료 취소 (배치로 되돌림)</button>`;
-    }else{
-      doneBtn = `<button class="doneBtn" style="width:100%;padding:11px;border:none;border-radius:8px;margin-bottom:5px;
-        background:#16a34a;color:#fff;font-size:14px;font-weight:800;cursor:pointer">✓ 완료 처리</button>`;
-    }
+    doneBtn = done
+      ? `<button class="btn-fill undo undoBtn">↩ 완료 취소 (배치로 되돌림)</button>`
+      : `<button class="btn-fill doneBtn">✓ 완료 처리</button>`;
   }
 
-  const html = `<div style="min-width:220px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
-      <span style="font-weight:800;font-size:15px;color:#0c1e4a">${added?'◆ ':'📍 '}${name}</span>
+  const html = `
+    <div class="sh-head">
+      <div>
+        <div class="sh-no">${added?'추가된 점':'측량점'}</div>
+        <div class="sh-line">${added?'◆ ':'📍 '}${name}</div>
+        <div class="sh-sub">${p.la.toFixed(6)}, ${p.ln.toFixed(6)}</div>
+      </div>
+      ${badge}
     </div>
-    <div style="margin-bottom:6px">${badge}</div>
-    <div style="font-size:11px;color:#64748b;margin-bottom:8px">${p.la.toFixed(6)}, ${p.ln.toFixed(6)}</div>
-    <div style="font-size:11px;color:#64748b;font-weight:700">담당자 배치</div>
+    <div class="sh-sec">담당자 배치</div>
     ${workerBox}
     ${doneBtn}
-    ${worker ? `<button class="unassignBtn" style="width:100%;padding:8px;border:none;border-radius:8px;margin-bottom:5px;
-      background:#fef2f2;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer">배치 해제</button>` : ''}
-    <button class="ptDelBtn" style="width:100%;padding:8px;border:1px solid #fca5a5;border-radius:8px;
-      background:#fff0f0;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer">🗑 측량불가 - 점 삭제</button>
-  </div>`;
+    ${worker ? `<button class="btn-hold unassignBtn">배치 해제</button>` : ''}
+    <button class="btn-del ptDelBtn">🗑 측량불가 - 점 삭제</button>
+  `;
 
-  L.popup({maxWidth:280}).setLatLng([p.la, p.ln]).setContent(html).openOn(map);
+  openSheet(html);
 
-  setTimeout(()=>{
-    // 담당자 배치 (done은 유지/리셋 안함 - 배치만)
-    document.querySelectorAll('.wbtn').forEach(b=>{
-      b.onclick = ()=>{
-        const w = parseInt(b.dataset.w);
-        if(worker == w){
-          // 같은 담당자 누르면 배치 해제
-          setPointStatus(name, {worker:0, done:false, doneAt:null});
-        }else{
-          // 다른 담당자로 배치 (완료상태는 유지하지 않고 배치만)
-          setPointStatus(name, {worker:w, done:false, assignedAt:Date.now()});
-        }
-        map.closePopup();
-      };
-    });
-    // 완료 처리
-    const doneB = document.querySelector('.doneBtn');
-    if(doneB) doneB.onclick = ()=>{
-      setPointStatus(name, {done:true, doneAt:Date.now()});
-      map.closePopup();
+  document.querySelectorAll('.wbtn').forEach(b=>{
+    b.onclick = ()=>{
+      const w = parseInt(b.dataset.w);
+      if(worker == w){
+        setPointStatus(name, {worker:0, done:false, doneAt:null});
+      }else{
+        setPointStatus(name, {worker:w, done:false, assignedAt:Date.now()});
+      }
+      closeSheet();
     };
-    // 완료 취소 (배치 상태로)
-    const undoB = document.querySelector('.undoBtn');
-    if(undoB) undoB.onclick = ()=>{
-      setPointStatus(name, {done:false, doneAt:null});
-      map.closePopup();
-    };
-    // 배치 해제
-    const unB = document.querySelector('.unassignBtn');
-    if(unB) unB.onclick = ()=>{
-      setPointStatus(name, {worker:0, done:false, doneAt:null});
-      map.closePopup();
-    };
-    const delBtn = document.querySelector('.ptDelBtn');
-    if(delBtn) delBtn.onclick = ()=>{ map.closePopup(); deletePoint(name); };
-  }, 50);
+  });
+  const doneB = document.querySelector('.doneBtn');
+  if(doneB) doneB.onclick = ()=>{
+    setPointStatus(name, {done:true, doneAt:Date.now()});
+    closeSheet();
+  };
+  const undoB = document.querySelector('.undoBtn');
+  if(undoB) undoB.onclick = ()=>{
+    setPointStatus(name, {done:false, doneAt:null});
+    closeSheet();
+  };
+  const unB = document.querySelector('.unassignBtn');
+  if(unB) unB.onclick = ()=>{
+    setPointStatus(name, {worker:0, done:false, doneAt:null});
+    closeSheet();
+  };
+  const delBtn = document.querySelector('.ptDelBtn');
+  if(delBtn) delBtn.onclick = ()=>{ closeSheet(); deletePoint(name); };
 }
 
 // 점 삭제 (두 번 확인)
@@ -949,28 +1034,28 @@ function onLineClick(idx){
   const done = st.done;
   const len = lineLength(ln.pts);
 
-  const html = `<div style="min-width:200px">
-    <div style="font-weight:800;font-size:14px;color:#0c1e4a">📐 ${ln.layer||'라인'} #${idx+1}</div>
-    <div style="font-size:13px;color:#3b82f6;font-weight:700;margin:3px 0 8px">연장: ${len.toFixed(1)}m</div>
-    <button class="lineDoneBtn" style="width:100%;padding:9px;border:none;border-radius:8px;margin-bottom:5px;
-      background:${done?'#f1f5f9':'#16a34a'};color:${done?'#666':'#fff'};font-size:13px;font-weight:700;cursor:pointer">
-      ${done?'↩ 완료 취소':'✓ 완료 처리'}</button>
-    <button class="lineGoBtn" style="width:100%;padding:8px;border:none;border-radius:8px;
-      background:#eff6ff;color:#3b82f6;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:5px">📍 이 라인으로 이동</button>
-    <button class="lineDelBtn" style="width:100%;padding:8px;border:1px solid #fca5a5;border-radius:8px;
-      background:#fff0f0;color:#dc2626;font-size:12px;font-weight:700;cursor:pointer">🗑 이 라인 삭제</button>
-  </div>`;
+  const html = `
+    <div class="sh-head">
+      <div>
+        <div class="sh-no">라인 #${idx+1}</div>
+        <div class="sh-line">📐 ${ln.layer||'라인'}</div>
+        <div class="sh-sub">연장 ${len.toFixed(1)} m</div>
+      </div>
+      <span class="badge ${done?'b-done':'b-wait'}">${done?'✓ 완료':'미완료'}</span>
+    </div>
+    <button class="btn-fill${done?' undo':''} lineDoneBtn">${done?'↩ 완료 취소':'✓ 완료 처리'}</button>
+    <button class="btn-hold lineGoBtn" style="color:#2563eb;border-color:#bfdbfe">📍 이 라인으로 이동</button>
+    <button class="btn-del lineDelBtn">🗑 이 라인 삭제</button>
+  `;
 
-  L.popup({maxWidth:280}).setLatLng(mid).setContent(html).openOn(map);
+  openSheet(html);
 
-  setTimeout(()=>{
-    const d = document.querySelector('.lineDoneBtn');
-    if(d) d.onclick = ()=>{ setLineStatus(idx, !done); map.closePopup(); };
-    const g = document.querySelector('.lineGoBtn');
-    if(g) g.onclick = ()=>{ map.fitBounds(ln.pts, {padding:[60,60]}); map.closePopup(); };
-    const del = document.querySelector('.lineDelBtn');
-    if(del) del.onclick = ()=>{ deleteLine(idx); map.closePopup(); };
-  }, 50);
+  const d = document.querySelector('.lineDoneBtn');
+  if(d) d.onclick = ()=>{ setLineStatus(idx, !done); closeSheet(); };
+  const g = document.querySelector('.lineGoBtn');
+  if(g) g.onclick = ()=>{ map.fitBounds(ln.pts, {padding:[60,60]}); closeSheet(); };
+  const del = document.querySelector('.lineDelBtn');
+  if(del) del.onclick = ()=>{ deleteLine(idx); closeSheet(); };
 }
 
 // 라인 길이 계산 (Haversine)
@@ -2003,6 +2088,10 @@ function bindEvents(){
   document.querySelectorAll('.ovl').forEach(o=>{
     o.onclick = e=>{ if(e.target===o) o.classList.remove('show'); };
   });
+
+  // 상세 시트 닫기
+  document.getElementById('sheetClose').onclick = closeSheet;
+  map.on('click', closeSheet);
 
   // 관리자 기능
   document.getElementById('admProjSel').onchange = e=>{
