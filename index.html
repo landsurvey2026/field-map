@@ -47,21 +47,20 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
   padding:11px 12px;gap:6px;color:#fff;z-index:1000}
 #topbar .logo{font-size:15.5px;font-weight:700;letter-spacing:-.3px;display:flex;align-items:center;gap:7px;flex-shrink:0}
 #topbar .logo .dot{width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0;
-  box-shadow:0 0 0 4px rgba(56,189,248,.22)}
+  box-shadow:0 0 0 4px rgba(34,211,238,.22)}
 #topbar .logo-txt{white-space:nowrap}
 #projName{font-family:var(--mono);font-size:11px;color:var(--sky);font-weight:600;letter-spacing:.2px;
   max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1;
-  background:rgba(56,189,248,.14);border:1px solid rgba(56,189,248,.28);border-radius:7px;padding:3px 8px}
+  background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.28);border-radius:7px;padding:3px 8px}
 #topbar .spacer{flex:1;min-width:0}
-.tbtn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:var(--r-sm);
-  font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  gap:5px;flex-shrink:0;padding:7px 11px;transition:background .12s}
-.tbtn.icon{width:36px;height:36px;padding:0;font-size:16px}
-.tbtn:active{background:rgba(255,255,255,.3)}
-.tbtn.admin{background:var(--sky);border-color:var(--sky);color:#06222a;font-weight:700}
+.tbtn{background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.26);color:#fff;border-radius:var(--r-sm);
+  font-family:var(--sans);font-size:12.5px;font-weight:700;letter-spacing:-.1px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  gap:5px;flex-shrink:0;padding:8px 12px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.18);transition:background .12s,transform .08s}
+.tbtn:active{background:rgba(255,255,255,.32);transform:scale(.97)}
+.tbtn.admin{background:var(--sky);border-color:var(--sky);color:#06222a;font-weight:800}
 @media(max-width:600px){
   #topbar{gap:4px;padding:9px 8px}
-  .tbtn.icon{width:33px;height:33px;font-size:14.5px}
+  .tbtn{padding:7px 9px;font-size:11.5px;gap:4px}
   #topbar .logo{font-size:13.5px}
   #projName{max-width:74px;font-size:10px}
 }
@@ -80,30 +79,27 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
   box-shadow:0 3px 10px rgba(15,23,42,.14);display:flex;align-items:center;gap:6px;border:1px solid var(--line)}
 .chip .cdot{width:8px;height:8px;border-radius:50%}
 
-/* ── 우측 도구 (참고 디자인: 레이어박스 / 편집박스 / GPS 원형 / 전체보기 필) ── */
-.layerbox{position:absolute;top:68px;right:10px;z-index:500;display:flex;flex-direction:column;
-  background:#fff;border-radius:var(--r-md);overflow:hidden;box-shadow:0 3px 10px rgba(15,23,42,.14);border:1px solid var(--line)}
-.layerbox button{border:none;background:#fff;width:44px;height:44px;font-size:18px;color:var(--ink);cursor:pointer;
-  display:flex;align-items:center;justify-content:center}
-.layerbox button:active{background:#f1f5f9}
+/* ── 우측 도구 (이름표 있는 묵직한 버튼) ── */
+.toolbox{position:absolute;z-index:500;display:flex;flex-direction:column;min-width:120px;
+  background:#fff;border-radius:var(--r-md);overflow:hidden;box-shadow:0 4px 14px rgba(15,23,42,.2);border:1.5px solid var(--line)}
+.toolbox button{border:none;border-bottom:1px solid var(--line);background:#fff;width:100%;height:44px;padding:0 13px;
+  font-family:var(--sans);font-size:12.5px;font-weight:700;color:var(--ink);cursor:pointer;
+  display:flex;align-items:center;gap:8px;text-align:left}
+.toolbox button:last-child{border-bottom:none}
+.toolbox button.on{background:var(--sky);color:#fff}
+.toolbox button:active{background:#f1f5f9}
+.layerbox{top:68px;right:10px}
+.editbox{top:120px;right:10px}
 
-.editbox{position:absolute;top:120px;right:10px;z-index:500;display:flex;flex-direction:column;
-  background:#fff;border-radius:var(--r-md);overflow:hidden;box-shadow:0 3px 10px rgba(15,23,42,.14);border:1px solid var(--line)}
-.editbox button{border:none;border-bottom:1px solid var(--line);background:#fff;width:44px;height:44px;font-size:17px;
-  color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center}
-.editbox button:last-child{border-bottom:none}
-.editbox button.on{background:var(--sky);color:#fff}
-.editbox button:active{background:#f1f5f9}
-
-.myloc-btn{position:absolute;bottom:112px;right:10px;z-index:500;width:44px;height:44px;border-radius:50%;
-  background:#fff;border:1px solid var(--line);box-shadow:0 3px 10px rgba(15,23,42,.14);font-size:19px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;color:var(--ink)}
-.myloc-btn.on{background:var(--sky);color:#fff}
-
-.fitall-btn{position:absolute;bottom:60px;right:10px;z-index:500;background:rgba(13,17,23,.88);color:#fff;border:none;
-  border-radius:20px;padding:8px 14px;font-family:var(--sans);font-size:12px;font-weight:700;cursor:pointer;
-  box-shadow:0 3px 10px rgba(15,23,42,.2)}
-.fitall-btn:active{background:rgba(13,17,23,1)}
+.pillbtn{position:absolute;z-index:500;background:#fff;color:var(--ink);border:1.5px solid var(--line);
+  border-radius:22px;padding:10px 16px;font-family:var(--sans);font-size:12.5px;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 14px rgba(15,23,42,.2);display:flex;align-items:center;gap:7px}
+.pillbtn:active{transform:scale(.97)}
+.pillbtn.on{background:var(--sky);color:#fff;border-color:var(--sky)}
+.pillbtn.dark{background:rgba(13,17,23,.9);color:#fff;border-color:transparent}
+.pillbtn.dark:active{background:rgba(13,17,23,1)}
+.myloc-btn{bottom:112px;right:10px}
+.fitall-btn{bottom:60px;right:10px}
 
 /* ── 범례 ── */
 #legend{position:absolute;bottom:14px;left:10px;z-index:500;background:rgba(13,17,23,.9);
@@ -224,7 +220,7 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
 .field label{display:block;font-size:12px;font-weight:700;color:var(--mut);margin-bottom:5px}
 .field input,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);
   border-radius:var(--r-sm);font-family:var(--sans);font-size:14px;outline:none;background:#fff}
-.field input:focus,.field select:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(56,189,248,.15)}
+.field input:focus,.field select:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(34,211,238,.15)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
   padding:11px 18px;border:none;border-radius:var(--r-sm);font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;transition:.12s}
 .btn-pri{background:var(--sky);color:#fff}
@@ -256,12 +252,12 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
 @keyframes splashHide{99%{opacity:0;visibility:visible}100%{opacity:0;visibility:hidden;pointer-events:none}}
 #splash .scard{text-align:center;color:#fff;display:flex;flex-direction:column;align-items:center}
 #splash .smap{width:130px;height:auto;margin-bottom:18px;
-  filter:drop-shadow(0 0 20px rgba(56,189,248,.5));opacity:.95}
+  filter:drop-shadow(0 0 20px rgba(34,211,238,.5));opacity:.95}
 #splash .stitle{font-size:29px;font-weight:800;letter-spacing:-.5px}
 #splash .stitle .b{color:var(--sky)}
 #splash .sline{width:110px;height:2px;background:var(--sky);margin:14px auto;opacity:.8}
 #splash .ssub{font-family:var(--mono);font-size:12px;color:#7dd3fc;letter-spacing:.4px}
-#splash .sbar{width:200px;height:4px;background:rgba(56,189,248,.2);border-radius:2px;overflow:hidden;margin:18px auto 0}
+#splash .sbar{width:200px;height:4px;background:rgba(34,211,238,.2);border-radius:2px;overflow:hidden;margin:18px auto 0}
 #splash .sbar i{display:block;height:100%;background:var(--sky);width:0;animation:sbar 2s linear forwards}
 @keyframes sbar{to{width:100%}}
 @keyframes navPulse{from{transform:scale(1)}to{transform:scale(1.04)}}
@@ -291,7 +287,7 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
   padding:2px 6px;font-family:var(--mono);font-size:11px;font-weight:700;color:#0d1117;
   box-shadow:0 2px 6px rgba(15,23,42,.18);white-space:nowrap}
 .pt-label.hl{font-size:22px !important;padding:4px 10px;border:2px solid #22d3ee;
-  background:#fff;color:#0891b2;z-index:9999 !important;box-shadow:0 0 0 4px rgba(56,189,248,.3),0 4px 12px rgba(0,0,0,.3)}
+  background:#fff;color:#0891b2;z-index:9999 !important;box-shadow:0 0 0 4px rgba(34,211,238,.3),0 4px 12px rgba(0,0,0,.3)}
 .pt-label::before{display:none}
 
 @media(min-width:768px){
@@ -320,12 +316,12 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
     <div class="logo"><span class="dot"></span><span class="logo-txt">현장관리</span></div>
     <div id="projName"></div>
     <div class="spacer"></div>
-    <button class="tbtn icon" id="manualBtn" title="사용 매뉴얼">📖</button>
-    <button class="tbtn icon" id="listBtn" title="목록">📋</button>
-    <button class="tbtn icon" id="dashBtn" title="현황표">📊</button>
-    <button class="tbtn icon" id="perfBtn" title="실적">🏆</button>
-    <button class="tbtn icon" id="searchBtn" title="검색">🔍</button>
-    <button class="tbtn icon admin" id="adminBtn" title="관리">⚙</button>
+    <button class="tbtn" id="manualBtn">📖 매뉴얼</button>
+    <button class="tbtn" id="listBtn">📋 목록</button>
+    <button class="tbtn" id="dashBtn">📊 현황판</button>
+    <button class="tbtn" id="perfBtn">🏆 실적</button>
+    <button class="tbtn" id="searchBtn">🔍 검색</button>
+    <button class="tbtn admin" id="adminBtn">⚙ 관리자</button>
   </div>
 
   <!-- 지도 -->
@@ -335,15 +331,15 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
   <div id="statChips"></div>
 
   <!-- 우측 도구 -->
-  <div class="layerbox">
-    <button id="layerBtn" title="지도 전환">🗺️</button>
+  <div class="toolbox layerbox">
+    <button id="layerBtn" title="지도 전환">🗺️ 지도전환</button>
   </div>
-  <div class="editbox">
-    <button id="boxSelBtn" title="범위 선택">▣</button>
-    <button id="moveBtn" title="점 이동">✥</button>
+  <div class="toolbox editbox">
+    <button id="boxSelBtn" title="범위 선택">▣ 범위선택</button>
+    <button id="moveBtn" title="점 이동">✥ 점이동</button>
   </div>
-  <button class="myloc-btn" id="gpsBtn" title="내 위치">📍</button>
-  <button class="fitall-btn" id="fitBtn">⬜ 전체보기</button>
+  <button class="pillbtn myloc-btn" id="gpsBtn">📍 내 위치</button>
+  <button class="pillbtn dark fitall-btn" id="fitBtn">⬜ 전체보기</button>
 
   <!-- 범례 -->
   <div id="legend">
@@ -632,10 +628,10 @@ function restoreMapPos(){
 function toggleLayer(){
   if(curBase==='base'){
     map.removeLayer(baseLayer); satLayer.addTo(map); window._hybrid.addTo(map);
-    curBase='sat'; document.getElementById('layerBtn').textContent='🛰️';
+    curBase='sat'; document.getElementById('layerBtn').textContent='🛰️ 위성전환';
   }else{
     map.removeLayer(satLayer); map.removeLayer(window._hybrid); baseLayer.addTo(map);
-    curBase='base'; document.getElementById('layerBtn').textContent='🗺️';
+    curBase='base'; document.getElementById('layerBtn').textContent='🗺️ 지도전환';
   }
 }
 
@@ -1310,11 +1306,11 @@ function toggleGPS(){
     return;
   }
   if(!navigator.geolocation){ toast('GPS를 지원하지 않습니다'); return; }
-  btn.classList.add('on'); btn.textContent='⌛';
+  btn.classList.add('on'); btn.textContent='⌛ 위치찾는중';
   let first=true;
   gpsWatch = navigator.geolocation.watchPosition(pos=>{
     const {latitude:la, longitude:ln, accuracy:acc} = pos.coords;
-    btn.textContent = acc<20?'📍':acc<50?'🔵':acc<100?'🟡':'🔴';
+    btn.textContent = (acc<20?'📍':acc<50?'🔵':acc<100?'🟡':'🔴') + ' 내 위치';
     if(!gpsMarker){
       gpsMarker = L.circleMarker([la,ln],{radius:8,fillColor:'#3b82f6',color:'#fff',weight:3,fillOpacity:1}).addTo(map);
       gpsCircle = L.circle([la,ln],{radius:acc,color:'#3b82f6',fillColor:'#3b82f6',fillOpacity:.1,weight:1}).addTo(map);
@@ -1325,7 +1321,7 @@ function toggleGPS(){
     if(first){ map.setView([la,ln],17); first=false; }
   }, err=>{
     toast('위치 권한을 허용해주세요');
-    btn.classList.remove('on'); btn.textContent='📍';
+    btn.classList.remove('on'); btn.textContent='📍 내 위치';
   }, {enableHighAccuracy:true, maximumAge:3000, timeout:15000});
 }
 
