@@ -482,6 +482,11 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
           <button class="btn btn-sec" id="admNewProj">+ 새 사업</button>
           <button class="btn btn-sec" id="admDelProj">사업 삭제</button>
         </div>
+        <div class="field" style="margin-top:14px">
+          <label>점 유형 명칭 (예: 측량점, 맨홀, CCTV)</label>
+          <input id="pointLabelInput" placeholder="측량점">
+        </div>
+        <button class="btn btn-sec btn-full" id="savePointLabel">점 유형 명칭 저장</button>
       </div>
 
       <div class="adm-sec">
@@ -570,6 +575,7 @@ let LINES = [];       // [{tp,layer,pts,color}]
 let STATUS = {};      // {name: {done,worker}}
 let LINESTATUS = {};  // {line_0:{done,worker}}
 let WORKER_NAMES = {1:'담당자1',2:'담당자2',3:'담당자3'};
+let POINT_LABEL = '측량점'; // 사업 유형에 따라 '측량점', '맨홀' 등으로 변경 가능
 let PROJECTS = {};    // {pid: {name}}
 let DELETED_COUNT = 0;
 let ptMarkers = {}, lineLayers = [];
@@ -710,13 +716,17 @@ function _doRenderPoints(){
     // 이동된 점은 보라 점선 테두리
     const moved = p.moved;
     if(moved){ strokeCol = '#7c3aed'; strokeW = 3; }
+    // 미존재 처리된 점은 회색 점선으로 구분
+    const exists = !(STATUS[name] && STATUS[name].exists === false);
+    let dash = moved ? '3,3' : null;
+    if(!exists){ fillCol = '#94a3b8'; fillOp = 0.5; strokeCol = '#64748b'; dash = '2,3'; }
     const mk = L.circleMarker([p.la, p.ln], {
       radius: radius,
       fillColor: fillCol,
       color: strokeCol,
       weight: strokeW,
       fillOpacity: fillOp,
-      dashArray: moved ? '3,3' : null
+      dashArray: dash
     });
     if(showLabel){
       mk.bindTooltip(name, {permanent:true, className:'pt-label', direction:'top', offset:[0,-8]});
@@ -942,6 +952,9 @@ function onPointClick(name){
   const done = st.done;
   const worker = st.worker || 0;
   const added = p.added;
+  const exists = st.exists !== false; // 기본값: 존재
+  const photoWide = st.photoWide || '';
+  const photoClose = st.photoClose || '';
 
   // 담당자 배치 버튼 (참고 디자인 wk-btn 스타일)
   let workerBox = '<div class="wk-picker">';
@@ -953,10 +966,19 @@ function onPointClick(name){
   }
   workerBox += '</div>';
 
+  // 존재/미존재 토글
+  const existBox = `<div class="wk-picker">
+    <button class="wbtn existBtn${exists?' on':''}" data-v="1"
+      style="border-color:#16a34a;${exists?'background:#16a34a':''};color:${exists?'#fff':'#16a34a'}">${exists?'✓ ':''}존재</button>
+    <button class="wbtn existBtn${!exists?' on':''}" data-v="0"
+      style="border-color:#dc2626;${!exists?'background:#dc2626':''};color:${!exists?'#fff':'#dc2626'}">${!exists?'✓ ':''}미존재</button>
+  </div>`;
+
   // 상태 뱃지 (참고 디자인 badge 클래스)
   let badge = '<span class="badge b-wait">미할당</span>';
   if(done) badge = '<span class="badge b-done">✓ 완료</span>';
   else if(worker) badge = `<span class="badge b-prog">${WORKER_NAMES[worker]} 배치됨</span>`;
+  if(!exists) badge = '<span class="badge b-hold">미존재</span>';
 
   // 완료/완료취소 버튼 (배치된 후에만)
   let doneBtn = '';
@@ -969,7 +991,7 @@ function onPointClick(name){
   const html = `
     <div class="sh-head">
       <div>
-        <div class="sh-no">${added?'추가된 점':'측량점'}</div>
+        <div class="sh-no">${added?'추가된 점':POINT_LABEL}</div>
         <div class="sh-line">${added?'◆ ':'📍 '}${name}</div>
         <div class="sh-sub">${p.la.toFixed(6)}, ${p.ln.toFixed(6)}</div>
       </div>
@@ -979,12 +1001,26 @@ function onPointClick(name){
     ${workerBox}
     ${doneBtn}
     ${worker ? `<button class="btn-hold unassignBtn">배치 해제</button>` : ''}
-    <button class="btn-del ptDelBtn">🗑 측량불가 - 점 삭제</button>
+    <div class="sh-sec">${POINT_LABEL} 존재 여부</div>
+    ${existBox}
+    <div class="sh-sec">사진번호</div>
+    <div class="field" style="margin-bottom:8px">
+      <label>원경</label>
+      <input id="photoWideInput" placeholder="예: DSC001" value="${photoWide.replace(/"/g,'&quot;')}">
+    </div>
+    <div class="field">
+      <label>근경</label>
+      <input id="photoCloseInput" placeholder="예: DSC002" value="${photoClose.replace(/"/g,'&quot;')}">
+    </div>
+    <button class="btn-fill photoSaveBtn">✓ 사진번호 저장</button>
+    <div style="text-align:center;margin-top:14px">
+      <a href="#" class="ptDelLink" style="font-size:11.5px;color:var(--mut);text-decoration:underline">이 점 완전히 삭제</a>
+    </div>
   `;
 
   openSheet(html);
 
-  document.querySelectorAll('.wbtn').forEach(b=>{
+  document.querySelectorAll('.wbtn:not(.existBtn)').forEach(b=>{
     b.onclick = ()=>{
       const w = parseInt(b.dataset.w);
       if(worker == w){
@@ -992,6 +1028,12 @@ function onPointClick(name){
       }else{
         setPointStatus(name, {worker:w, done:false, assignedAt:Date.now()});
       }
+      closeSheet();
+    };
+  });
+  document.querySelectorAll('.existBtn').forEach(b=>{
+    b.onclick = ()=>{
+      setPointStatus(name, {exists: b.dataset.v==='1'});
       closeSheet();
     };
   });
@@ -1010,13 +1052,20 @@ function onPointClick(name){
     setPointStatus(name, {worker:0, done:false, doneAt:null});
     closeSheet();
   };
-  const delBtn = document.querySelector('.ptDelBtn');
-  if(delBtn) delBtn.onclick = ()=>{ closeSheet(); deletePoint(name); };
+  const photoBtn = document.querySelector('.photoSaveBtn');
+  if(photoBtn) photoBtn.onclick = ()=>{
+    const wide = document.getElementById('photoWideInput').value.trim();
+    const close = document.getElementById('photoCloseInput').value.trim();
+    setPointStatus(name, {photoWide: wide, photoClose: close});
+    closeSheet();
+  };
+  const delLink = document.querySelector('.ptDelLink');
+  if(delLink) delLink.onclick = (e)=>{ e.preventDefault(); closeSheet(); deletePoint(name); };
 }
 
 // 점 삭제 (두 번 확인)
 function deletePoint(name){
-  if(!confirm(`'${name}' 점을 삭제할까요?\n\n측량불가 점을 제거합니다.`)) return;
+  if(!confirm(`'${name}' 점을 완전히 삭제할까요?\n\n존재/미존재 상태가 아니라 점 자체를 지도에서 제거합니다.`)) return;
   if(!confirm(`정말 삭제하시겠습니까?\n\n'${name}' 점과 좌표가 완전히 사라집니다.\n이 작업은 되돌릴 수 없습니다.`)) return;
   // 삭제 카운터 증가
   const delRef = db.ref('projects/'+PROJ_ID+'/deletedCount');
@@ -1195,6 +1244,11 @@ function loadProjectView(pid){
       document.getElementById('wn3').value = WORKER_NAMES[3];
       updateLegend();
     }
+  });
+  // 점 유형 명칭 (측량점 / 맨홀 등)
+  ref.child('info/pointLabel').on('value', s=>{
+    POINT_LABEL = s.val() || '측량점';
+    document.getElementById('pointLabelInput').value = POINT_LABEL;
   });
 
   // 첫 로드 시: 저장된 위치 복원, 없으면 전체보기
@@ -2007,7 +2061,8 @@ function updateLegend(){
     <div class="lrow"><span class="lc" style="background:#3b82f6"></span>${WORKER_NAMES[1]}</div>
     <div class="lrow"><span class="lc" style="background:#f97316"></span>${WORKER_NAMES[2]}</div>
     <div class="lrow"><span class="lc" style="background:#a855f7"></span>${WORKER_NAMES[3]}</div>
-    <div class="lrow"><span class="lc" style="background:#16a34a"></span>완료</div>`;
+    <div class="lrow"><span class="lc" style="background:#16a34a"></span>완료</div>
+    <div class="lrow"><span class="lc" style="background:#94a3b8"></span>미존재</div>`;
 }
 
 let toastT;
@@ -2116,6 +2171,10 @@ function bindEvents(){
   document.getElementById('npCreate').onclick = createProject;
   document.getElementById('admDelProj').onclick = deleteProject;
   document.getElementById('wnSave').onclick = saveWorkerNames;
+  document.getElementById('savePointLabel').onclick = ()=>{
+    const v = document.getElementById('pointLabelInput').value.trim() || '측량점';
+    db.ref('projects/'+PROJ_ID+'/info/pointLabel').set(v).then(()=>toast('점 유형 명칭 저장됨'));
+  };
   document.getElementById('shareCopy').onclick = copyShare;
 
   // DXF 업로드
@@ -2659,9 +2718,18 @@ async function handleXLS(file){
     // 좌표 형식 판별 (xn 있으면 TM, 없으면 위경도)
     const fmtType = bestPts[0][3] != null ? 'TM좌표(X,Y)' : '위경도';
 
+    // Firebase 키 제약: . # $ / [ ] 사용 불가 → 안전한 문자로 치환
+    function sanitizePointName(nm){
+      return String(nm)
+        .replace(/\[/g, '(').replace(/\]/g, ')')
+        .replace(/[.#$/]/g, '_')
+        .trim();
+    }
+
     // points 객체로 변환
     const points = {};
     bestPts.forEach(([nm, la, ln, xn, ye])=>{
+      nm = sanitizePointName(nm);
       points[nm] = {la, ln};
       if(xn!=null) points[nm].xn = xn;
       if(ye!=null) points[nm].ye = ye;
