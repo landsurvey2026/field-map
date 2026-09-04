@@ -291,7 +291,8 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
   color:var(--w1);font-weight:700;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
 .pt-label{background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:5px;
   padding:1px 5px;font-family:var(--mono);font-size:10px;font-weight:700;color:#0d1117;
-  box-shadow:0 2px 6px rgba(15,23,42,.18);white-space:nowrap}
+  box-shadow:0 2px 6px rgba(15,23,42,.18);white-space:nowrap;
+  pointer-events:auto !important;cursor:pointer}
 .pt-label.hl{font-size:22px !important;padding:4px 10px;border:2px solid #22d3ee;
   background:#fff;color:#0891b2;z-index:9999 !important;box-shadow:0 0 0 4px rgba(34,211,238,.3),0 4px 12px rgba(0,0,0,.3)}
 .pt-label::before{display:none}
@@ -719,7 +720,7 @@ function _doRenderPoints(){
       const above = labelIdx % 2 === 0;
       mk.bindTooltip(name, {permanent:true, className:'pt-label', direction: above?'top':'bottom', offset: above?[0,-8]:[0,8]});
     }
-    mk.on('click', ()=>{
+    const handleTap = ()=>{
       if(boxSelMode){
         togglePointSelection(name);
       }else if(moveMode){
@@ -727,9 +728,23 @@ function _doRenderPoints(){
       }else{
         onPointClick(name);
       }
+    };
+    mk.on('click', ()=>{
+      handleTap();
       L.DomEvent.stopPropagation();
     });
     _ptLayer.addLayer(mk);
+    // ★ 점들이 화면상 겹쳐 있을 때, 원(마커) 대신 라벨 글자를 탭해도 해당 점이 정확히 선택되도록
+    // (라벨 텍스트는 서로 다른 위치에 표시되므로 겹친 원보다 정확히 짚기 쉬움)
+    if(showLabel){
+      const tt = mk.getTooltip();
+      if(tt && tt._container){
+        tt._container.onclick = (e)=>{
+          e.stopPropagation();
+          handleTap();
+        };
+      }
+    }
     ptMarkers[name] = mk;
     rendered++;
   });
