@@ -91,6 +91,7 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
 .toolbox button:active{background:#f1f5f9}
 .layerbox{top:68px;right:10px}
 .editbox{top:120px;right:10px}
+.zoombox{top:262px;right:10px}
 
 .pillbtn{position:absolute;z-index:500;background:#fff;color:var(--ink);border:1.5px solid var(--line);
   border-radius:22px;padding:10px 16px;font-family:var(--sans);font-size:12.5px;font-weight:700;cursor:pointer;
@@ -343,16 +344,19 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
     <button id="moveBtn" title="점 이동">✥ 점이동</button>
     <button id="addPtBtn" title="신규점 추가">➕ 신규점</button>
   </div>
+  <div class="toolbox zoombox">
+    <button id="zoomInBtn" title="확대">➕ 확대</button>
+    <button id="zoomOutBtn" title="축소">➖ 축소</button>
+  </div>
   <button class="pillbtn myloc-btn" id="gpsBtn">📍 내 위치</button>
   <button class="pillbtn dark fitall-btn" id="fitBtn">⬜ 전체보기</button>
 
   <!-- 범례 -->
   <div id="legend">
-    <div class="lrow"><span class="lc" style="background:#dc2626"></span>미할당</div>
-    <div class="lrow"><span class="lc" style="background:var(--w1)"></span>담당자1</div>
-    <div class="lrow"><span class="lc" style="background:var(--w2)"></span>담당자2</div>
-    <div class="lrow"><span class="lc" style="background:var(--w3)"></span>담당자3</div>
-    <div class="lrow"><span class="lc" style="background:#16a34a"></span>완료</div>
+    <div class="lrow"><span class="lc" style="background:#dc2626"></span>조사미완료</div>
+    <div class="lrow"><span class="lc" style="background:#16a34a"></span>조사완료</div>
+    <div class="lrow"><span class="lc" style="background:#94a3b8"></span>미존재</div>
+    <div class="lrow"><span class="lc" style="background:#0891b2"></span>신규</div>
   </div>
 
   <div id="credit">Dev. Seo Young Min</div>
@@ -362,15 +366,15 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
     z-index:600;background:#0d1117;color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;
     box-shadow:0 4px 16px rgba(0,0,0,.3)">드래그 또는 점을 탭하여 선택하세요</div>
 
-  <!-- 선택된 포인트 일괄배정 패널 -->
+  <!-- 선택된 포인트 일괄처리 패널 -->
   <div id="selPanel" style="display:none;position:absolute;bottom:60px;left:50%;transform:translateX(-50%);
     z-index:700;background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 6px 28px rgba(0,0,0,.25);
     min-width:280px">
     <div style="font-size:14px;font-weight:800;color:#0d1117;margin-bottom:10px">
-      <span id="selCount">0</span>개 선택됨 - 담당자 일괄 <b>배치</b></div>
-    <div id="selWorkerBtns" style="display:flex;gap:6px;margin-bottom:8px"></div>
+      <span id="selCount">0</span>개 선택됨 - 조사상태 일괄 <b>변경</b></div>
+    <button id="selMarkDone" class="btn btn-full" style="background:#16a34a;color:#fff;margin-bottom:6px">✓ 조사완료로 표시</button>
     <div style="display:flex;gap:6px">
-      <button id="selCancel" class="btn btn-sec" style="flex:1">배치해제</button>
+      <button id="selMarkTodo" class="btn btn-sec" style="flex:1">조사미완료로 표시</button>
       <button id="selClose" class="btn btn-sec" style="flex:1">닫기</button>
     </div>
   </div>
@@ -453,7 +457,7 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
 <!-- 실적 모달 -->
 <div class="ovl" id="perfOvl">
   <div class="modal" style="max-width:440px">
-    <div class="mhead"><h3>🏆 담당자 실적</h3><button class="mclose" data-close>×</button></div>
+    <div class="mhead"><h3>🏆 실적</h3><button class="mclose" data-close>×</button></div>
     <div class="mbody" id="perfBody"></div>
   </div>
 </div>
@@ -517,14 +521,6 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
       </div>
 
       <div class="adm-sec">
-        <h4>👷 담당자 이름</h4>
-        <div class="field"><input id="wn1" placeholder="담당자1"></div>
-        <div class="field"><input id="wn2" placeholder="담당자2"></div>
-        <div class="field"><input id="wn3" placeholder="담당자3"></div>
-        <button class="btn btn-pri btn-full" id="wnSave">담당자 이름 저장</button>
-      </div>
-
-      <div class="adm-sec">
         <h4>🔗 현장 공유</h4>
         <div class="field"><input id="shareUrl" readonly></div>
         <button class="btn btn-pri btn-full" id="shareCopy">링크 복사</button>
@@ -558,7 +554,6 @@ const FB_CONFIG = {
   projectId: "landsurvey2027"
 };
 const ADMIN_PIN = "0000";
-const WORKER_COLORS = {1:'#3b82f6', 2:'#f97316', 3:'#a855f7'};
 
 // URL 파라미터로 사업 ID 받기 (?p=xxx)
 const urlParams = new URLSearchParams(location.search);
@@ -574,9 +569,8 @@ let map, baseLayer, satLayer, curBase='base';
 let db;
 let POINTS = {};      // {name: {la,ln,xn,ye}}
 let LINES = [];       // [{tp,layer,pts,color}]
-let STATUS = {};      // {name: {done,worker}}
-let LINESTATUS = {};  // {line_0:{done,worker}}
-let WORKER_NAMES = {1:'담당자1',2:'담당자2',3:'담당자3'};
+let STATUS = {};      // {name: {done}}
+let LINESTATUS = {};  // {line_0:{done}}
 let POINT_LABEL = '측량점'; // 사업 유형에 따라 '측량점', '맨홀' 등으로 변경 가능
 
 // Firebase 키 제약: . # $ / [ ] 사용 불가 → 안전한 문자로 치환
@@ -614,13 +608,6 @@ function initMap(){
 
   baseLayer.addTo(map);
   window._hybrid = hybrid;
-
-  L.control.zoom({position:'topright'}).addTo(map);
-  // 줌 컨트롤을 도구 아래로
-  setTimeout(()=>{
-    const zc=document.querySelector('.leaflet-control-zoom');
-    if(zc){zc.style.marginTop='200px';zc.style.marginRight='10px';}
-  },100);
 
   map.on('dblclick', onMapDblClick);
   map.doubleClickZoom.disable();
@@ -663,22 +650,14 @@ function onMapDblClick(e){
 // ═══════════════════════════════════════════════════
 //  데이터 렌더링
 // ═══════════════════════════════════════════════════
-// 포인트 상태: 'none'(미할당) | 'assigned'(배치) | 'done'(완료)
+// 포인트 상태: 'todo'(조사미완료) | 'done'(조사완료)
 function pointState(name){
   const st = STATUS[name];
-  if(!st || !st.worker) return 'none';
-  return st.done ? 'done' : 'assigned';
+  return (st && st.done) ? 'done' : 'todo';
 }
 function statusColor(name){
   const st = STATUS[name];
-  if(st && st.worker) return WORKER_COLORS[st.worker] || '#16a34a';
-  return '#dc2626';
-}
-// 연한 색 (배치됨용)
-function lightColor(hex){
-  // hex → rgba 연하게
-  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},0.35)`;
+  return (st && st.done) ? '#16a34a' : '#dc2626';
 }
 
 // ★ 성능 최적화: 화면에 보이는 점만 렌더링 (viewport culling)
@@ -714,17 +693,10 @@ function _doRenderPoints(){
     if(!bounds.contains([p.la, p.ln])) return;
 
     const col = statusColor(name);
-    const state = pointState(name);
     const added = p.added;
-    // 배치됨=속 빈 원(연한 채움), 완료됨=꽉 찬 원, 미할당=빨강 채움
+    // 조사완료=초록 꽉 찬 원, 조사미완료=빨강 꽉 찬 원
     let fillOp, fillCol, strokeCol, strokeW;
-    if(state === 'done'){
-      fillCol = col; fillOp = 1; strokeCol = added?'#fbbf24':'#fff'; strokeW = added?3:2;
-    }else if(state === 'assigned'){
-      fillCol = col; fillOp = 0.3; strokeCol = col; strokeW = 3;
-    }else{
-      fillCol = '#dc2626'; fillOp = 1; strokeCol = added?'#fbbf24':'#fff'; strokeW = added?3:2;
-    }
+    fillCol = col; fillOp = 1; strokeCol = added?'#fbbf24':'#fff'; strokeW = added?3:2;
     // 이동된 점은 보라 점선 테두리
     const moved = p.moved;
     if(moved){ strokeCol = '#7c3aed'; strokeW = 3; }
@@ -809,20 +781,17 @@ function renderLines(){
 
 function renderStats(){
   const chips = document.getElementById('statChips');
-  let un=0, assigned=0, done=0;
+  let todo=0, done=0;
   Object.keys(POINTS).forEach(name=>{
     const st = STATUS[name];
-    if(st && st.worker){
-      if(st.done) done++; else assigned++;
-    }else un++;
+    if(st && st.done) done++; else todo++;
   });
   const total = Object.keys(POINTS).length;
   const pct = total ? Math.round(done/total*100) : 0;
   chips.innerHTML = `
     <div class="chip"><span class="cdot" style="background:#1e293b"></span>전체 ${total}</div>
-    <div class="chip"><span class="cdot" style="background:#dc2626"></span>미할당 ${un}</div>
-    <div class="chip"><span class="cdot" style="background:#2563eb"></span>배치 ${assigned}</div>
-    <div class="chip" style="background:#16a34a;color:#fff"><span class="cdot" style="background:#fff"></span>완료 ${done} (${pct}%)</div>
+    <div class="chip"><span class="cdot" style="background:#dc2626"></span>조사미완료 ${todo}</div>
+    <div class="chip" style="background:#16a34a;color:#fff"><span class="cdot" style="background:#fff"></span>조사완료 ${done} (${pct}%)</div>
   `;
 }
 
@@ -923,11 +892,9 @@ function renderListModal(){
       const p = POINTS[name];
       const col = statusColor(name);
       const state = pointState(name);
-      const st = STATUS[name];
       let stat, bg;
-      if(state==='done'){ stat='완료'; bg='#dcfce7;color:#16a34a'; }
-      else if(state==='assigned'){ stat=(WORKER_NAMES[st.worker]||'담당')+' 배치'; bg='#dbeafe;color:#1d4ed8'; }
-      else { stat='미할당'; bg='#fee2e2;color:#dc2626'; }
+      if(state==='done'){ stat='조사완료'; bg='#dcfce7;color:#16a34a'; }
+      else { stat='조사미완료'; bg='#fee2e2;color:#dc2626'; }
       const added = p.added ? '<span style="color:#b45309">◆</span> ' : '';
       html += `<div class="litem" onclick="goToPoint('${name}')">
         <span class="ltag" style="background:${col}"></span>
@@ -976,19 +943,8 @@ function onPointClick(name){
 
   function render(){
     const done = ws.done;
-    const worker = ws.worker || 0;
     const added = p.added;
     const es = ws.existStatus;
-
-    // 담당자 배치 버튼
-    let workerBox = '<div class="wk-picker">';
-    for(let w=1; w<=3; w++){
-      const on = worker==w;
-      workerBox += `<button class="wbtn wk-btn${on?' on':''}" data-w="${w}"
-        style="border-color:${WORKER_COLORS[w]};${on?`background:${WORKER_COLORS[w]}`:''};color:${on?'#fff':WORKER_COLORS[w]}">
-        ${on?'✓ ':''}${WORKER_NAMES[w]}</button>`;
-    }
-    workerBox += '</div>';
 
     // 존재/미존재/신규 3단계 토글
     const existOpts = [
@@ -1005,19 +961,14 @@ function onPointClick(name){
     existBox += '</div>';
 
     // 상태 뱃지
-    let badge = '<span class="badge b-wait">미할당</span>';
-    if(done) badge = '<span class="badge b-done">✓ 완료</span>';
-    else if(worker) badge = `<span class="badge b-prog">${WORKER_NAMES[worker]} 배치됨</span>`;
+    let badge = done ? '<span class="badge b-done">✓ 조사완료</span>' : '<span class="badge b-wait">조사미완료</span>';
     if(es === 'none') badge = '<span class="badge b-hold">미존재</span>';
     else if(es === 'new') badge = '<span class="badge b-prog" style="background:#e0f7fb;color:#0891b2">신규</span>';
 
-    // 완료/완료취소 버튼 (배치된 후에만)
-    let doneBtn = '';
-    if(worker){
-      doneBtn = done
-        ? `<button class="btn-fill undo undoBtn">↩ 완료 취소 (배치로 되돌림)</button>`
-        : `<button class="btn-fill doneBtn">✓ 완료 처리</button>`;
-    }
+    // 완료/완료취소 버튼
+    const doneBtn = done
+      ? `<button class="btn-fill undo undoBtn">↩ 조사완료 취소</button>`
+      : `<button class="btn-fill doneBtn">✓ 조사완료 처리</button>`;
 
     // 입력 중이던 사진번호 값 보존 (재렌더링 시 사라지지 않도록)
     const curWide = document.getElementById('photoWideInput');
@@ -1036,10 +987,8 @@ function onPointClick(name){
         </div>
         ${badge}
       </div>
-      <div class="sh-sec">담당자 배치</div>
-      ${workerBox}
+      <div class="sh-sec">조사 상태</div>
       ${doneBtn}
-      ${worker ? `<button class="btn-hold unassignBtn">배치 해제</button>` : ''}
       <div class="sh-sec">${POINT_LABEL} 존재 여부</div>
       ${existBox}
       <div class="sh-sec">사진번호</div>
@@ -1078,18 +1027,6 @@ function onPointClick(name){
     if(pwInput) pwInput.onblur = autoSavePhoto;
     if(pcInput) pcInput.onblur = autoSavePhoto;
 
-    document.querySelectorAll('.wbtn:not(.existBtn)').forEach(b=>{
-      b.onclick = ()=>{
-        const w = parseInt(b.dataset.w);
-        if((ws.worker||0) == w){
-          Object.assign(ws, {worker:0, done:false, doneAt:null});
-        }else{
-          Object.assign(ws, {worker:w, done:false, assignedAt:Date.now()});
-        }
-        setPointStatus(name, {worker:ws.worker, done:ws.done, doneAt:ws.doneAt||null, assignedAt:ws.assignedAt||null}, true);
-        render();
-      };
-    });
     document.querySelectorAll('.existBtn').forEach(b=>{
       b.onclick = ()=>{
         ws.existStatus = b.dataset.v;
@@ -1107,12 +1044,6 @@ function onPointClick(name){
     if(undoB) undoB.onclick = ()=>{
       Object.assign(ws, {done:false, doneAt:null});
       setPointStatus(name, {done:false, doneAt:null}, true);
-      render();
-    };
-    const unB = document.querySelector('.unassignBtn');
-    if(unB) unB.onclick = ()=>{
-      Object.assign(ws, {worker:0, done:false, doneAt:null});
-      setPointStatus(name, {worker:0, done:false, doneAt:null}, true);
       render();
     };
     const photoBtn = document.querySelector('.photoSaveBtn');
@@ -1192,7 +1123,7 @@ function haversine(la1,ln1,la2,ln2){
 function setPointStatus(name, data, silent){
   db.ref('projects/'+PROJ_ID+'/status/'+name).update(data);
   if(silent) return;
-  toast(data.done!==undefined ? (data.done?'완료 처리됨':'완료 취소됨') : '담당자 배정됨');
+  toast(data.done!==undefined ? (data.done?'조사완료 처리됨':'조사완료 취소됨') : '저장됨');
 }
 function setLineStatus(idx, done){
   db.ref('projects/'+PROJ_ID+'/lineStatus/line_'+idx).update({done, doneAt:done?Date.now():null});
@@ -1299,19 +1230,6 @@ function loadProjectView(pid){
   ref.child('lineStatus').on('value', s=>{ LINESTATUS = s.val()||{}; renderLines(); });
   // 삭제 카운터
   ref.child('deletedCount').on('value', s=>{ DELETED_COUNT = s.val()||0; });
-  // 담당자 이름
-  ref.child('workerNames').on('value', s=>{
-    const v = s.val();
-    if(v){
-      WORKER_NAMES = Array.isArray(v)
-        ? {1:v[1]||'담당자1',2:v[2]||'담당자2',3:v[3]||'담당자3'}
-        : {1:v['1']||'담당자1',2:v['2']||'담당자2',3:v['3']||'담당자3'};
-      document.getElementById('wn1').value = WORKER_NAMES[1];
-      document.getElementById('wn2').value = WORKER_NAMES[2];
-      document.getElementById('wn3').value = WORKER_NAMES[3];
-      updateLegend();
-    }
-  });
   // 점 유형 명칭 (측량점 / 맨홀 등)
   ref.child('info/pointLabel').on('value', s=>{
     POINT_LABEL = s.val() || '측량점';
@@ -1762,44 +1680,18 @@ function showSelPanel(){
   const panel = document.getElementById('selPanel');
   document.getElementById('selCount').textContent = selectedPoints.size;
   if(selectedPoints.size === 0){ panel.style.display='none'; return; }
-  // 담당자 버튼
-  const wbtns = document.getElementById('selWorkerBtns');
-  let html = '';
-  for(let w=1; w<=3; w++){
-    html += `<button class="selWbtn" data-w="${w}" style="flex:1;padding:10px 4px;border:2px solid ${WORKER_COLORS[w]};
-      background:#fff;color:${WORKER_COLORS[w]};border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">
-      ${WORKER_NAMES[w]}</button>`;
-  }
-  wbtns.innerHTML = html;
-  wbtns.querySelectorAll('.selWbtn').forEach(b=>{
-    b.onclick = ()=>{
-      const w = parseInt(b.dataset.w);
-      assignWorkerBatch(w);
-    };
-  });
   panel.style.display = 'block';
 }
 
-function assignWorkerBatch(w){
+function markSelected(done){
   const updates = {};
+  const now = Date.now();
   selectedPoints.forEach(name=>{
-    // 박스 선택은 "배치"만 (완료 아님)
-    updates['projects/'+PROJ_ID+'/status/'+name] = {worker:w, done:false, assignedAt:Date.now()};
+    updates['projects/'+PROJ_ID+'/status/'+name+'/done'] = done;
+    updates['projects/'+PROJ_ID+'/status/'+name+'/doneAt'] = done ? now : null;
   });
   db.ref().update(updates).then(()=>{
-    toast(`${selectedPoints.size}개 → ${WORKER_NAMES[w]} 배치`);
-    clearBoxSelection();
-    toggleBoxSelect();
-  });
-}
-
-function cancelWorkerBatch(){
-  const updates = {};
-  selectedPoints.forEach(name=>{
-    updates['projects/'+PROJ_ID+'/status/'+name] = {worker:0, done:false, doneAt:null};
-  });
-  db.ref().update(updates).then(()=>{
-    toast(`${selectedPoints.size}개 배치해제`);
+    toast(`${selectedPoints.size}개 → ${done?'조사완료':'조사미완료'} 처리`);
     clearBoxSelection();
     toggleBoxSelect();
   });
@@ -1811,11 +1703,7 @@ function cancelWorkerBatch(){
 function calcStats(){
   const s = {
     total: 0, base: 0, added: 0, deleted: DELETED_COUNT,
-    unassigned: 0, assigned: 0, done: 0,
-    assignedByWorker: {1:0, 2:0, 3:0},  // 배치된 수 (완료 포함)
-    doneByWorker: {1:0, 2:0, 3:0},      // 완료된 수
-    addedByWorker: {1:0, 2:0, 3:0},
-    addedUnassigned: 0
+    todo: 0, done: 0
   };
   Object.keys(POINTS).forEach(name=>{
     const p = POINTS[name];
@@ -1824,20 +1712,8 @@ function calcStats(){
     const isAdded = p.added;
     if(isAdded) s.added++; else s.base++;
 
-    if(st.worker){
-      // 배치됨 (완료 여부 무관)
-      s.assignedByWorker[st.worker] = (s.assignedByWorker[st.worker]||0) + 1;
-      if(isAdded) s.addedByWorker[st.worker]=(s.addedByWorker[st.worker]||0)+1;
-      if(st.done){
-        s.done++;
-        s.doneByWorker[st.worker] = (s.doneByWorker[st.worker]||0) + 1;
-      }else{
-        s.assigned++;  // 배치만 됨 (미완료)
-      }
-    }else{
-      s.unassigned++;
-      if(isAdded) s.addedUnassigned++;
-    }
+    if(st.done) s.done++;
+    else s.todo++;
   });
   s.originalTotal = s.total + s.deleted;
   return s;
@@ -1853,8 +1729,8 @@ function renderDashboard(){
       <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">전체 물량 (현재)</div>
       <div style="font-size:36px;font-weight:900;line-height:1">${s.total}<span style="font-size:16px;color:#22d3ee"> 개</span></div>
       <div style="display:flex;gap:16px;margin-top:12px;font-size:13px">
-        <div><span style="color:#22d3ee">완료</span> ${s.done} (${pct}%)</div>
-        <div><span style="color:#fca5a5">미할당</span> ${s.unassigned}</div>
+        <div><span style="color:#22d3ee">조사완료</span> ${s.done} (${pct}%)</div>
+        <div><span style="color:#fca5a5">조사미완료</span> ${s.todo}</div>
       </div>
       <div style="margin-top:10px;height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#0891b2,#22d3ee)"></div>
@@ -1885,76 +1761,41 @@ function renderDashboard(){
       <div style="font-size:11px;color:#94a3b8;margin-top:6px">* 원 물량 = 현재 ${s.total} + 삭제 ${s.deleted}</div>
     </div>
 
-    <!-- 전체 배치/완료 요약 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+    <!-- 조사완료/미완료 요약 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <div style="background:#fee2e2;border-radius:10px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#991b1b">미할당</div>
-        <div style="font-size:22px;font-weight:800;color:#dc2626">${s.unassigned}</div>
-      </div>
-      <div style="background:#dbeafe;border-radius:10px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#1e40af">배치(작업중)</div>
-        <div style="font-size:22px;font-weight:800;color:#2563eb">${s.assigned}</div>
+        <div style="font-size:11px;color:#991b1b">조사미완료</div>
+        <div style="font-size:22px;font-weight:800;color:#dc2626">${s.todo}</div>
       </div>
       <div style="background:#dcfce7;border-radius:10px;padding:12px;text-align:center">
-        <div style="font-size:11px;color:#166534">완료</div>
+        <div style="font-size:11px;color:#166534">조사완료</div>
         <div style="font-size:22px;font-weight:800;color:#16a34a">${s.done}</div>
       </div>
     </div>
 
-    <!-- 담당자별 배치/완료 -->
-    <div style="margin-bottom:8px">
-      <div style="font-size:13px;font-weight:800;color:#0d1117;margin-bottom:8px">👷 담당자별 배치 → 완료</div>
-      ${[1,2,3].map(w=>{
-        const assigned = s.assignedByWorker[w];
-        const done = s.doneByWorker[w];
-        const waiting = assigned - done;  // 배치만 하고 미완료
-        const pct = assigned ? Math.round(done/assigned*100) : 0;
-        return `<div style="padding:10px;background:#f8fafc;border-radius:10px;margin-bottom:6px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:nowrap">
-            <span style="width:11px;height:11px;border-radius:50%;background:${WORKER_COLORS[w]};flex-shrink:0"></span>
-            <span style="font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${WORKER_NAMES[w]}</span>
-            <span style="font-size:12px;color:#64748b;white-space:nowrap;flex-shrink:0">배치<b style="color:${WORKER_COLORS[w]}">${assigned}</b> 완료<b style="color:#16a34a">${done}</b>${s.addedByWorker[w]>0?`<span style="color:#b45309">◆${s.addedByWorker[w]}</span>`:''}</span>
-          </div>
-          <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin-bottom:8px">
-            <div style="height:100%;width:${pct}%;background:${WORKER_COLORS[w]}"></div>
-          </div>
-          ${waiting>0?`<button class="batchDoneBtn" data-w="${w}" style="width:100%;padding:8px;border:none;border-radius:8px;
-            background:#16a34a;color:#fff;font-size:12px;font-weight:700;cursor:pointer">✓ 배치만 한 ${waiting}개 일괄 완료</button>`
-          :`<div style="text-align:center;font-size:11px;color:#94a3b8">대기 중인 배치 없음</div>`}
-        </div>`;
-      }).join('')}
-    </div>
-
     <!-- 전체 일괄 완료 -->
-    ${s.assigned>0?`<button id="batchDoneAll" style="width:100%;padding:12px;border:none;border-radius:10px;
+    ${s.todo>0?`<button id="batchDoneAll" style="width:100%;padding:12px;border:none;border-radius:10px;
       background:#0d1117;color:#fff;font-size:14px;font-weight:800;cursor:pointer;margin-top:6px">
-      ✓ 배치만 한 전체 ${s.assigned}개 일괄 완료</button>`:''}
+      ✓ 조사미완료 ${s.todo}개 일괄 완료 처리</button>`:''}
   `;
 
   // 일괄완료 버튼 이벤트
   setTimeout(()=>{
-    document.querySelectorAll('.batchDoneBtn').forEach(b=>{
-      b.onclick = ()=> batchComplete(parseInt(b.dataset.w));
-    });
     const allBtn = document.getElementById('batchDoneAll');
-    if(allBtn) allBtn.onclick = ()=> batchComplete(0);  // 0=전체
+    if(allBtn) allBtn.onclick = ()=> batchComplete();
   }, 50);
 }
 
-// 배치만 한 점들 일괄 완료
-function batchComplete(worker){
-  // worker=0이면 전체, 아니면 해당 담당자만
+// 조사미완료 점들 일괄 완료
+function batchComplete(){
   const targets = [];
   Object.keys(POINTS).forEach(name=>{
     const st = STATUS[name];
-    if(st && st.worker && !st.done){  // 배치됨 + 미완료
-      if(worker===0 || st.worker===worker) targets.push(name);
-    }
+    if(!st || !st.done) targets.push(name);
   });
-  if(targets.length === 0){ toast('완료할 배치가 없습니다'); return; }
+  if(targets.length === 0){ toast('완료 처리할 점이 없습니다'); return; }
 
-  const who = worker===0 ? '전체' : WORKER_NAMES[worker];
-  if(!confirm(`${who} 배치 ${targets.length}개를 모두 완료 처리할까요?`)) return;
+  if(!confirm(`조사미완료 ${targets.length}개를 모두 조사완료로 처리할까요?`)) return;
 
   const now = Date.now();
   const updates = {};
@@ -1971,98 +1812,37 @@ function batchComplete(worker){
 function renderPerformance(){
   const s = calcStats();
   const body = document.getElementById('perfBody');
-  const maxW = Math.max(s.assignedByWorker[1], s.assignedByWorker[2], s.assignedByWorker[3], 1);
 
   body.innerHTML = `
-    <!-- 개인별 실적 막대 -->
-    <div style="margin-bottom:18px">
-      <div style="font-size:13px;font-weight:800;color:#0d1117;margin-bottom:12px">📈 개인별 완료 실적</div>
-      ${[1,2,3].map(w=>{
-        const assigned = s.assignedByWorker[w];
-        const done = s.doneByWorker[w];
-        const remain = assigned - done;
-        const barPct = Math.round(done/maxW*100);
-        const assignPct = Math.round(assigned/maxW*100);
-        return `<div style="margin-bottom:16px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px;gap:6px;flex-wrap:nowrap">
-            <span style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${WORKER_NAMES[w]}</span>
-            <span style="font-size:12px;white-space:nowrap;flex-shrink:0"><b style="color:#16a34a">${done}</b>완료/<b style="color:${WORKER_COLORS[w]}">${assigned}</b>배치${remain>0?`<span style="color:#dc2626"> 잔여${remain}</span>`:''}</span>
-          </div>
-          <div style="height:14px;background:#f1f5f9;border-radius:7px;overflow:hidden;position:relative">
-            <div style="position:absolute;height:100%;width:${assignPct}%;background:${WORKER_COLORS[w]};opacity:.3"></div>
-            <div style="position:absolute;height:100%;width:${barPct}%;background:${WORKER_COLORS[w]}"></div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-
     <!-- 전체 진행 -->
     <div style="background:#f8fafc;border-radius:12px;padding:16px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:800;color:#0d1117;margin-bottom:10px">📊 전체 진행률</div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:32px;font-weight:900;color:#0d1117">${s.total?Math.round(s.done/s.total*100):0}<span style="font-size:18px">%</span></div>
         <div style="text-align:right;font-size:12px;color:#64748b;white-space:nowrap">
-          <div>완료<b style="color:#16a34a">${s.done}</b>/전체${s.total}</div>
-          <div>배치<b style="color:#2563eb">${s.assigned}</b>·미할당<b style="color:#dc2626">${s.unassigned}</b></div>
+          <div>조사완료<b style="color:#16a34a">${s.done}</b>/전체${s.total}</div>
+          <div>조사미완료<b style="color:#dc2626">${s.todo}</b></div>
         </div>
-      </div>
-    </div>
-
-    <!-- 남은 물량 -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:14px">
-        <div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:4px">미할당</div>
-        <div style="font-size:24px;font-weight:900;color:#dc2626">${s.unassigned}<span style="font-size:13px"> 개</span></div>
-        ${s.addedUnassigned>0?`<div style="font-size:11px;color:#92400e;margin-top:2px">◆추가 ${s.addedUnassigned}</div>`:''}
-      </div>
-      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px">
-        <div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:4px">배치됨 (작업중)</div>
-        <div style="font-size:24px;font-weight:900;color:#2563eb">${s.assigned}<span style="font-size:13px"> 개</span></div>
       </div>
     </div>
 
     <!-- 날짜별 통계 -->
     <div style="margin-top:18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="font-size:13px;font-weight:800;color:#0d1117">📅 날짜별 통계</div>
-        <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px">
-          <button class="dateBasis ${_dateBasis==='done'?'on':''}" data-basis="done"
-            style="padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
-            background:${_dateBasis==='done'?'#0d1117':'transparent'};color:${_dateBasis==='done'?'#fff':'#64748b'}">완료한 날</button>
-          <button class="dateBasis ${_dateBasis==='assigned'?'on':''}" data-basis="assigned"
-            style="padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
-            background:${_dateBasis==='assigned'?'#0d1117':'transparent'};color:${_dateBasis==='assigned'?'#fff':'#64748b'}">배치한 날</button>
-        </div>
-      </div>
+      <div style="font-size:13px;font-weight:800;color:#0d1117;margin-bottom:10px">📅 날짜별 조사완료 통계</div>
       <div id="dateStatsBody">${renderDateStats()}</div>
     </div>
   `;
-
-  setTimeout(()=>{
-    document.querySelectorAll('.dateBasis').forEach(b=>{
-      b.onclick = ()=>{ _dateBasis = b.dataset.basis; renderPerformance(); };
-    });
-  }, 50);
 }
 
-let _dateBasis = 'done';  // 'done'=완료한 날, 'assigned'=배치한 날
-
 function renderDateStats(){
-  const field = _dateBasis === 'done' ? 'doneAt' : 'assignedAt';
-  // 날짜별 집계 {날짜: {total, w1,w2,w3}}
+  // 날짜별 조사완료 집계 {날짜: 완료수}
   const byDate = {};
   Object.keys(POINTS).forEach(name=>{
     const st = STATUS[name];
-    if(!st || !st.worker) return;
-    // 완료기준이면 완료된 것만, 배치기준이면 배치된 것 전부
-    if(_dateBasis==='done' && !st.done) return;
-    const ts = st[field];
-    if(!ts) return;
-    const d = new Date(ts);
+    if(!st || !st.done || !st.doneAt) return;
+    const d = new Date(st.doneAt);
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    if(!byDate[key]) byDate[key] = {total:0, w:{1:0,2:0,3:0}};
-    byDate[key].total++;
-    byDate[key].w[st.worker] = (byDate[key].w[st.worker]||0)+1;
+    byDate[key] = (byDate[key]||0) + 1;
   });
 
   const dates = Object.keys(byDate).sort().reverse();  // 최신순
@@ -2071,24 +1851,21 @@ function renderDateStats(){
   }
 
   const dayNames = ['일','월','화','수','목','금','토'];
-  const maxTotal = Math.max(...dates.map(k=>byDate[k].total), 1);
+  const maxTotal = Math.max(...dates.map(k=>byDate[k]), 1);
 
   return dates.map(key=>{
-    const day = byDate[key];
+    const total = byDate[key];
     const d = new Date(key);
     const dn = dayNames[d.getDay()];
-    const barPct = Math.round(day.total/maxTotal*100);
-    const wParts = [1,2,3].filter(w=>day.w[w]>0)
-      .map(w=>`<span style="color:${WORKER_COLORS[w]}">${WORKER_NAMES[w]} ${day.w[w]}</span>`).join(' · ');
+    const barPct = Math.round(total/maxTotal*100);
     return `<div style="padding:10px;background:#f8fafc;border-radius:10px;margin-bottom:6px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
         <span style="font-weight:700;font-size:13px">${key.slice(5)} (${dn})</span>
-        <span style="font-size:15px;font-weight:800;color:#0d1117">${day.total}개</span>
+        <span style="font-size:15px;font-weight:800;color:#0d1117">${total}개</span>
       </div>
-      <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin-bottom:5px">
+      <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
         <div style="height:100%;width:${barPct}%;background:#0891b2"></div>
       </div>
-      <div style="font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wParts||'-'}</div>
     </div>`;
   }).join('');
 }
@@ -2110,24 +1887,22 @@ function renderManual(){
 
     <div class="mn-sec">
       <div class="mn-h">📍 작업 상태 (점 색상)</div>
-      <div class="mn-state"><span class="mn-dot" style="background:#dc2626"></span><b>빨강(꽉찬)</b> — 미할당</div>
-      <div class="mn-state"><span class="mn-dot" style="background:#3b82f6;opacity:.4"></span><b>연한색(빈 원)</b> — 담당자 배치됨 (작업중)</div>
-      <div class="mn-state"><span class="mn-dot" style="background:#3b82f6"></span><b>진한색(꽉찬)</b> — 완료</div>
+      <div class="mn-state"><span class="mn-dot" style="background:#dc2626"></span><b>빨강</b> — 조사미완료</div>
+      <div class="mn-state"><span class="mn-dot" style="background:#16a34a"></span><b>초록</b> — 조사완료</div>
       <div class="mn-state"><span class="mn-dot" style="background:#3b82f6;border:2px dashed #7c3aed"></span><b>보라 점선</b> — 위치 이동된 점</div>
       <div class="mn-state"><span style="color:#b45309;font-weight:800">◆</span> <b>다이아</b> — 추가로 받은 점</div>
     </div>
 
     <div class="mn-sec">
-      <div class="mn-h">✓ 담당자 배치 → 완료</div>
-      <div class="mn-item"><b>1) 배치</b> — 점 탭 → 담당자 선택 (연한색)</div>
-      <div class="mn-item"><b>2) 완료</b> — 배치된 점에서 [✓완료처리] (진한색)</div>
-      <div class="mn-item"><b>완료취소</b> — 완료 점 → [↩완료취소]로 배치상태로</div>
+      <div class="mn-h">✓ 조사완료 처리</div>
+      <div class="mn-item"><b>완료 처리</b> — 점 탭 → [✓ 조사완료 처리]</div>
+      <div class="mn-item"><b>완료취소</b> — 완료된 점 → [↩ 조사완료 취소]로 미완료 상태로</div>
     </div>
 
     <div class="mn-sec">
-      <div class="mn-h">▣ 여러 점 한번에 배치</div>
+      <div class="mn-h">▣ 여러 점 한번에 처리</div>
       <div class="mn-item"><b>▣ 버튼</b> 켜고 → 드래그로 박스 그리기 또는 점 하나씩 탭</div>
-      <div class="mn-item">선택된 점들 → 담당자 일괄 배치</div>
+      <div class="mn-item">선택된 점들 → 조사완료/미완료 일괄 처리</div>
     </div>
 
     <div class="mn-sec">
@@ -2139,8 +1914,8 @@ function renderManual(){
 
     <div class="mn-sec">
       <div class="mn-h">📊 현황표 / 🏆 실적</div>
-      <div class="mn-item"><b>현황표</b> — 전체 물량, 배치/완료, 추가/삭제 집계</div>
-      <div class="mn-item"><b>실적</b> — 담당자별 완료 실적, 잔여 물량</div>
+      <div class="mn-item"><b>현황표</b> — 전체 물량, 조사완료/미완료, 추가/삭제 집계</div>
+      <div class="mn-item"><b>실적</b> — 전체 진행률, 날짜별 조사완료 통계</div>
     </div>
 
     <div class="mn-sec">
@@ -2148,7 +1923,6 @@ function renderManual(){
       <div class="mn-item"><b>DXF 업로드</b> — 라인(관로) 추가</div>
       <div class="mn-item"><b>엑셀 업로드</b> — 포인트 추가 (X,Y 또는 위경도)</div>
       <div class="mn-item"><b>기존에 추가</b> — 체크하면 기존 점 유지하고 추가</div>
-      <div class="mn-item"><b>담당자 이름</b> — 담당자1/2/3 실명 설정</div>
     </div>
 
     <div class="mn-foot">
@@ -2160,11 +1934,8 @@ function renderManual(){
 function updateLegend(){
   const lg = document.getElementById('legend');
   lg.innerHTML = `
-    <div class="lrow"><span class="lc" style="background:#dc2626"></span>미할당</div>
-    <div class="lrow"><span class="lc" style="background:#3b82f6"></span>${WORKER_NAMES[1]}</div>
-    <div class="lrow"><span class="lc" style="background:#f97316"></span>${WORKER_NAMES[2]}</div>
-    <div class="lrow"><span class="lc" style="background:#a855f7"></span>${WORKER_NAMES[3]}</div>
-    <div class="lrow"><span class="lc" style="background:#16a34a"></span>완료</div>
+    <div class="lrow"><span class="lc" style="background:#dc2626"></span>조사미완료</div>
+    <div class="lrow"><span class="lc" style="background:#16a34a"></span>조사완료</div>
     <div class="lrow"><span class="lc" style="background:#94a3b8"></span>미존재</div>
     <div class="lrow"><span class="lc" style="background:#0891b2"></span>신규</div>`;
 }
@@ -2188,12 +1959,15 @@ function bindEvents(){
   document.getElementById('boxSelBtn').onclick = toggleBoxSelect;
   document.getElementById('moveBtn').onclick = toggleMoveMode;
   document.getElementById('addPtBtn').onclick = toggleAddPtMode;
+  document.getElementById('zoomInBtn').onclick = ()=> map.zoomIn();
+  document.getElementById('zoomOutBtn').onclick = ()=> map.zoomOut();
 
   document.getElementById('moveGpsBtn').onclick = moveToGPS;
   document.getElementById('moveCancelBtn').onclick = cancelDrag;
   document.getElementById('undoMoveBtn').onclick = undoMove;
   document.getElementById('selClose').onclick = ()=>{ clearBoxSelection(); toggleBoxSelect(); };
-  document.getElementById('selCancel').onclick = cancelWorkerBatch;
+  document.getElementById('selMarkDone').onclick = ()=> markSelected(true);
+  document.getElementById('selMarkTodo').onclick = ()=> markSelected(false);
 
   // 매뉴얼
   document.getElementById('manualBtn').onclick = ()=>{ renderManual(); openOvl('manualOvl'); };
@@ -2278,7 +2052,6 @@ function bindEvents(){
   document.getElementById('admNewProj').onclick = ()=>openOvl('newProjOvl');
   document.getElementById('npCreate').onclick = createProject;
   document.getElementById('admDelProj').onclick = deleteProject;
-  document.getElementById('wnSave').onclick = saveWorkerNames;
   document.getElementById('savePointLabel').onclick = ()=>{
     const v = document.getElementById('pointLabelInput').value.trim() || '측량점';
     db.ref('projects/'+PROJ_ID+'/info/pointLabel').set(v).then(()=>toast('점 유형 명칭 저장됨'));
@@ -2413,15 +2186,6 @@ function deleteProject(){
     toast('삭제되었습니다');
     location.reload();
   });
-}
-
-function saveWorkerNames(){
-  const names = {
-    1: document.getElementById('wn1').value.trim() || '담당자1',
-    2: document.getElementById('wn2').value.trim() || '담당자2',
-    3: document.getElementById('wn3').value.trim() || '담당자3'
-  };
-  db.ref('projects/'+PROJ_ID+'/workerNames').set(names).then(()=>toast('담당자 이름 저장됨'));
 }
 
 function copyShare(){
@@ -2812,7 +2576,6 @@ async function exportXLS(){
     {header:'경도', key:'ln', width:14},
     {header:'X(TM)', key:'xn', width:12},
     {header:'Y(TM)', key:'ye', width:12},
-    {header:'담당자', key:'worker', width:12},
     {header:'완료여부', key:'done', width:10},
     {header:'존재여부', key:'exist', width:10},
     {header:'원경사진번호', key:'photoWide', width:14},
@@ -2831,7 +2594,6 @@ async function exportXLS(){
     ws.addRow({
       name: nm,
       la: p.la, ln: p.ln, xn, ye,
-      worker: st.worker ? WORKER_NAMES[st.worker] : '',
       done: st.done ? 'O' : '',
       exist: es==='none' ? '미존재' : es==='new' ? '신규' : '존재',
       photoWide: st.photoWide || '',
@@ -2927,6 +2689,7 @@ window.addEventListener('error', function(e){
 window.addEventListener('DOMContentLoaded', ()=>{
   try{ initMap(); initBoxSelect(); }catch(e){ console.error('지도 초기화:', e); }
   try{ bindEvents(); }catch(e){ console.error('이벤트:', e); }
+  updateLegend();
   initFirebase();
 });
 </script>
