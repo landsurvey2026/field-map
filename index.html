@@ -1062,6 +1062,22 @@ function onPointClick(name){
   }
 
   function bind(){
+    // 사진번호: 포커스를 잃을 때(다른 버튼 클릭 포함) 자동 저장 - 저장 버튼을 안 눌러도 값이 사라지지 않도록
+    const pwInput = document.getElementById('photoWideInput');
+    const pcInput = document.getElementById('photoCloseInput');
+    function autoSavePhoto(){
+      if(!pwInput || !pcInput) return;
+      const wide = pwInput.value.trim();
+      const close = pcInput.value.trim();
+      if(wide !== (ws.photoWide||'') || close !== (ws.photoClose||'')){
+        ws.photoWide = wide; ws.photoClose = close;
+        ws._draftWide = wide; ws._draftClose = close;
+        setPointStatus(name, {photoWide: wide, photoClose: close}, true);
+      }
+    }
+    if(pwInput) pwInput.onblur = autoSavePhoto;
+    if(pcInput) pcInput.onblur = autoSavePhoto;
+
     document.querySelectorAll('.wbtn:not(.existBtn)').forEach(b=>{
       b.onclick = ()=>{
         const w = parseInt(b.dataset.w);
