@@ -127,7 +127,7 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
 .sh-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:8px}
 .sh-no{font-family:var(--mono);font-size:12px;color:#0891b2;font-weight:600}
 .sh-line{font-size:17px;font-weight:700;margin-top:1px;color:var(--navy)}
-.sh-sub{font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:4px}
+.sh-sub{font-family:var(--mono);font-size:11px;color:var(--mut);margin-top:4px;line-height:1.6}
 .badge{font-family:var(--mono);font-size:11px;font-weight:700;padding:5px 11px;border-radius:20px;
   white-space:nowrap;flex-shrink:0}
 .b-wait{background:#eef1f5;color:#64748b}
@@ -288,8 +288,8 @@ html,body{height:100%;font-family:var(--sans);background:#0d1117;color:var(--ink
   letter-spacing:-.3px}
 .line-label{background:transparent;border:none;box-shadow:none;font-family:var(--mono);
   color:var(--w1);font-weight:700;font-size:12px;text-shadow:0 0 3px #fff,0 0 3px #fff}
-.pt-label{background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:6px;
-  padding:2px 6px;font-family:var(--mono);font-size:11px;font-weight:700;color:#0d1117;
+.pt-label{background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:5px;
+  padding:1px 5px;font-family:var(--mono);font-size:10px;font-weight:700;color:#0d1117;
   box-shadow:0 2px 6px rgba(15,23,42,.18);white-space:nowrap}
 .pt-label.hl{font-size:22px !important;padding:4px 10px;border:2px solid #22d3ee;
   background:#fff;color:#0891b2;z-index:9999 !important;box-shadow:0 0 0 4px rgba(34,211,238,.3),0 4px 12px rgba(0,0,0,.3)}
@@ -588,18 +588,19 @@ function initMap(){
   map = L.map('map', {
     zoomControl:false, attributionControl:false,
     preferCanvas:true,  // ★ Canvas 렌더링 (성능 대폭 향상)
-    renderer: L.canvas({padding:0.5})
+    renderer: L.canvas({padding:0.5}),
+    maxZoom: 22
   }).setView([37.5,127], 11);
 
   baseLayer = L.tileLayer(
     `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Base/{z}/{y}/{x}.png`,
-    {maxNativeZoom:19, maxZoom:21, subdomains:''});
+    {maxNativeZoom:19, maxZoom:22, subdomains:''});
   satLayer = L.tileLayer(
     `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Satellite/{z}/{y}/{x}.jpeg`,
-    {maxNativeZoom:19, maxZoom:21});
+    {maxNativeZoom:19, maxZoom:22});
   const hybrid = L.tileLayer(
     `https://api.vworld.kr/req/wmts/1.0.0/${VW_KEY}/Hybrid/{z}/{y}/{x}.png`,
-    {maxNativeZoom:19, maxZoom:21});
+    {maxNativeZoom:19, maxZoom:22});
 
   baseLayer.addTo(map);
   window._hybrid = hybrid;
@@ -688,13 +689,14 @@ function _doRenderPoints(){
   ptMarkers = {};
 
   const z = map.getZoom();
-  const showLabel = z >= 17;
+  const showLabel = z >= 18; // 겹침 방지: 더 확대했을 때만 라벨 표시
   const radius = z >= 17 ? 7 : z >= 14 ? 5 : 4;
 
   // 화면 범위 (여유 20%)
   const bounds = map.getBounds().pad(0.2);
 
   let rendered = 0;
+  let labelIdx = 0;
   Object.keys(POINTS).forEach(name=>{
     const p = POINTS[name];
     if(!p.la || !p.ln) return;
@@ -729,7 +731,9 @@ function _doRenderPoints(){
       dashArray: dash
     });
     if(showLabel){
-      mk.bindTooltip(name, {permanent:true, className:'pt-label', direction:'top', offset:[0,-8]});
+      labelIdx++;
+      const above = labelIdx % 2 === 0;
+      mk.bindTooltip(name, {permanent:true, className:'pt-label', direction: above?'top':'bottom', offset: above?[0,-8]:[0,8]});
     }
     mk.on('click', ()=>{
       if(boxSelMode){
@@ -956,6 +960,12 @@ function onPointClick(name){
   const photoWide = st.photoWide || '';
   const photoClose = st.photoClose || '';
 
+  // X,Y(TM) 좌표: 저장된 값이 없으면 위경도로부터 즉석 계산
+  let xn = p.xn, ye = p.ye;
+  if(xn == null || ye == null){
+    try{ const tm = wgsToTm(p.la, p.ln); xn = Math.round(tm[0]*1000)/1000; ye = Math.round(tm[1]*1000)/1000; }catch(e){}
+  }
+
   // 담당자 배치 버튼 (참고 디자인 wk-btn 스타일)
   let workerBox = '<div class="wk-picker">';
   for(let w=1; w<=3; w++){
@@ -993,7 +1003,7 @@ function onPointClick(name){
       <div>
         <div class="sh-no">${added?'추가된 점':POINT_LABEL}</div>
         <div class="sh-line">${added?'◆ ':'📍 '}${name}</div>
-        <div class="sh-sub">${p.la.toFixed(6)}, ${p.ln.toFixed(6)}</div>
+        <div class="sh-sub">위경도 ${p.la.toFixed(6)}, ${p.ln.toFixed(6)}${xn!=null?`<br>X,Y ${xn.toFixed(3)}, ${ye.toFixed(3)}`:''}</div>
       </div>
       ${badge}
     </div>
